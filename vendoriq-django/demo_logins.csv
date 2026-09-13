@@ -1,0 +1,51 @@
+store,email,password,role
+[DEMO] Port Harcourt Supermarket 1,owner0@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Port Harcourt Supermarket 1,store0staff0@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Supermarket 1,store0staff1@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Supermarket 1,store0staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Supermarket 1,store0staff3@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Lagos Provisions Store 2,owner1@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Lagos Provisions Store 2,store1staff0@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Provisions Store 2,store1staff1@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Lagos Provisions Store 2,store1staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Provisions Store 2,store1staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Electronics Shop 3,owner2@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Lagos Electronics Shop 3,store2staff0@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Electronics Shop 3,store2staff1@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Electronics Shop 3,store2staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Lagos Electronics Shop 3,store2staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Provisions Store 4,owner3@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Port Harcourt Provisions Store 4,store3staff0@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Port Harcourt Provisions Store 4,store3staff1@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Provisions Store 4,store3staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Port Harcourt Provisions Store 4,store3staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Enugu Provisions Store 5,owner4@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Enugu Provisions Store 5,store4staff0@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Enugu Provisions Store 5,store4staff1@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Enugu Provisions Store 5,store4staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Enugu Provisions Store 5,store4staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Electronics Shop 6,owner5@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Benin City Electronics Shop 6,store5staff0@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Benin City Electronics Shop 6,store5staff1@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Benin City Electronics Shop 6,store5staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Electronics Shop 6,store5staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Electronics Shop 7,owner6@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Benin City Electronics Shop 7,store6staff0@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Electronics Shop 7,store6staff1@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Benin City Electronics Shop 7,store6staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Electronics Shop 7,store6staff3@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Pharmacy 8,owner7@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Benin City Pharmacy 8,store7staff0@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Benin City Pharmacy 8,store7staff1@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Pharmacy 8,store7staff2@demo.vendoriq.test,Demo1234!,CASHIER
+[DEMO] Benin City Pharmacy 8,store7staff3@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Enugu Bookshop 9,owner8@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Enugu Bookshop 9,store8staff0@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Enugu Bookshop 9,store8staff1@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Enugu Bookshop 9,store8staff2@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Enugu Bookshop 9,store8staff3@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Kano Bookshop 10,owner9@demo.vendoriq.test,Demo1234!,OWNER
+[DEMO] Kano Bookshop 10,store9staff0@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Kano Bookshop 10,store9staff1@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Kano Bookshop 10,store9staff2@demo.vendoriq.test,Demo1234!,MANAGER
+[DEMO] Kano Bookshop 10,store9staff3@demo.vendoriq.test,Demo1234!,MANAGER

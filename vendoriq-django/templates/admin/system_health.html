@@ -1,0 +1,77 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <p class="viq-hint">
+    Checked live on this page load, as of {{ checked_at|date:"M j, Y, g:i A" }}. Never shows a secret value (API
+    keys, credentials) - only whether something is configured and/or reachable right now.
+  </p>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Core services</p>
+    <div class="viq-panel">
+      {% for check in checks %}
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">{{ check.label }}</p>
+          {% if check.sub %}<p class="viq-status-sub">{{ check.sub }}</p>{% endif %}
+        </div>
+        <span class="viq-status-pill {% if check.ok %}viq-status-pill-ok{% else %}viq-status-pill-down{% endif %}">
+          <span class="viq-status-dot"></span>{% if check.ok %}Healthy{% else %}Down{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">Background jobs (Celery)</p>
+          <p class="viq-status-sub">
+            {% if celery_status == 'ok' %}Worker responding{% elif celery_status == 'off' %}No worker responding - normal in local dev if one isn't running{% else %}Unable to check{% endif %}
+          </p>
+        </div>
+        <span class="viq-status-pill {% if celery_status == 'ok' %}viq-status-pill-ok{% else %}viq-status-pill-off{% endif %}">
+          <span class="viq-status-dot"></span>{% if celery_status == 'ok' %}Healthy{% else %}Idle{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Configuration</p>
+    <div class="viq-panel">
+      {% for check in config_checks %}
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">{{ check.label }}</p>
+          <p class="viq-status-sub">{{ check.sub }}{% if check.hint %} &mdash; {{ check.hint }}{% endif %}</p>
+        </div>
+        <span class="viq-status-pill {% if check.ok %}viq-status-pill-ok{% elif check.optional %}viq-status-pill-off{% else %}viq-status-pill-down{% endif %}">
+          <span class="viq-status-dot"></span>
+          {% if check.ok %}Set{% elif check.optional %}Optional{% else %}Missing{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="viq-hint" style="margin-top:8px;">
+    Seeing "AI service unavailable" in the app? Check the "AI assistant (Groq)" row above first, then check your
+    <code>runserver</code> terminal output - failed Groq calls log the exact upstream reason there.
+  </p>
+
+</div>
+{% endblock %}

@@ -1,0 +1,357 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}
+  {% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}
+{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <p class="viq-hint">Platform-wide overview — every store, every user. For a single store's own numbers, see that store's in-app dashboard instead.</p>
+
+  {% for group in kpi_groups %}
+  <div class="viq-section">
+    <p class="viq-section-title">{{ group.title }}</p>
+    <div class="viq-grid viq-grid-5">
+      {% for card in group.cards %}
+      <div class="viq-card">
+        <p class="viq-label">{{ card.label }}</p>
+        <p class="viq-value {% if card.warn %}viq-value-warn{% endif %}">{{ card.value }}</p>
+        {% if card.hint %}<p class="viq-hint-sm">{{ card.hint }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <!-- Growth trends -->
+  <div class="viq-section" id="analytics">
+    <p class="viq-section-title">Growth (last 30 days)</p>
+    <div class="viq-grid viq-grid-3">
+
+      <div class="viq-card">
+        <p class="viq-label">New users</p>
+        <p class="viq-value" style="font-size:18px;margin-bottom:8px;">{{ growth.new_users.total }}</p>
+        {% if growth.new_users.points %}
+        <svg viewBox="0 0 280 56" style="width:100%;height:56px;" preserveAspectRatio="none">
+          <polyline points="{{ growth.new_users.points }}" class="viq-svg-line" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {% endif %}
+      </div>
+
+      <div class="viq-card">
+        <p class="viq-label">New stores</p>
+        <p class="viq-value" style="font-size:18px;margin-bottom:8px;">{{ growth.new_stores.total }}</p>
+        {% if growth.new_stores.points %}
+        <svg viewBox="0 0 280 56" style="width:100%;height:56px;" preserveAspectRatio="none">
+          <polyline points="{{ growth.new_stores.points }}" class="viq-svg-line" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {% endif %}
+      </div>
+
+      <div class="viq-card">
+        <p class="viq-label">Revenue processed</p>
+        <p class="viq-value" style="font-size:18px;margin-bottom:8px;">₦{{ growth.revenue.total|floatformat:0 }}</p>
+        {% if growth.revenue.points %}
+        <svg viewBox="0 0 280 56" style="width:100%;height:56px;" preserveAspectRatio="none">
+          <polyline points="{{ growth.revenue.points }}" class="viq-svg-line" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Store health -->
+  <div class="viq-section">
+    <p class="viq-section-title">Store health</p>
+    <div class="viq-grid viq-grid-3">
+      <div class="viq-card">
+        <p class="viq-label">Healthy (sold in last 30 days)</p>
+        <p class="viq-value viq-value-ok">{{ store_health.healthy_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">At risk (sold before, quiet 30+ days)</p>
+        <p class="viq-value viq-value-warn">{{ store_health.at_risk_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Never made a sale</p>
+        <p class="viq-value viq-value-muted">{{ store_health.never_sold_count }}</p>
+      </div>
+    </div>
+    {% if store_health.at_risk_stores %}
+    <div class="viq-card" style="margin-top:12px;">
+      <p class="viq-label" style="margin-bottom:8px;">At-risk stores</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        {% for s in store_health.at_risk_stores %}
+        <a href="{% url 'admin:stores_store_change' s.id %}" class="viq-pill">{{ s.name }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Top lists -->
+  <div class="viq-section">
+    <p class="viq-section-title">Top performers (this month / last 30 days)</p>
+    <div class="viq-grid viq-grid-3">
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Top stores by revenue</div>
+        {% for s in top_stores_by_revenue %}
+        <a href="{% url 'admin:stores_store_change' s.store__id %}" class="viq-panel-row">
+          <span class="viq-panel-row-title">{{ s.store__name }}</span>
+          <span class="viq-panel-row-amount">₦{{ s.revenue|floatformat:0 }}</span>
+        </a>
+        {% empty %}
+        <p class="viq-panel-empty">No sales yet this month.</p>
+        {% endfor %}
+      </div>
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Top products (units sold)</div>
+        {% for p in top_products %}
+        <div class="viq-panel-row">
+          <span class="viq-panel-row-title">{{ p.product__name }}</span>
+          <span class="viq-panel-row-amount">{{ p.units }} sold</span>
+        </div>
+        {% empty %}
+        <p class="viq-panel-empty">No sales yet.</p>
+        {% endfor %}
+      </div>
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Most active staff (sales recorded)</div>
+        {% for u in most_active_staff %}
+        <div class="viq-panel-row">
+          <div style="min-width:0;">
+            <p class="viq-panel-row-title">{{ u.recorded_by__name }}</p>
+            <p class="viq-panel-row-sub">{{ u.recorded_by__email }}</p>
+          </div>
+          <span class="viq-panel-row-amount">{{ u.sales_count }} sales</span>
+        </div>
+        {% empty %}
+        <p class="viq-panel-empty">No sales yet.</p>
+        {% endfor %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AI usage -->
+  <div class="viq-section" id="ai-usage">
+    <p class="viq-section-title">AI assistant usage</p>
+    <div class="viq-grid viq-grid-3">
+      <div class="viq-card">
+        <p class="viq-label">Messages sent today</p>
+        <p class="viq-value">{{ ai_usage.messages_today }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Messages sent (7 days)</p>
+        <p class="viq-value">{{ ai_usage.messages_week }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Avg messages per active store (7d)</p>
+        <p class="viq-value">{{ ai_usage.avg_per_active_store }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PLANNED SECTIONS BELOW - not wired to real data yet.
+       VendorIQ doesn't have billing/subscriptions, a support ticketing
+       system, or uptime monitoring built yet, so there's nothing real to
+       show for platform revenue, premium-vs-free users, support tickets,
+       or system health. These sections exist so the dashboard's shape is
+       already right for later - build the feature, replace the em-dashes
+       in vendoriq/admin_dashboard.py with real queries, drop the "planned"
+       classes. Until then: dashed borders, muted text, "Planned" pills -
+       deliberately unmistakable as placeholders, not live numbers.
+       ============================================================ -->
+
+  <!-- Platform revenue & subscriptions -->
+  <div class="viq-section">
+    <p class="viq-section-title">Platform revenue &amp; subscriptions</p>
+    <p class="viq-hint">
+      Of {{ subscriptions.tracked_accounts }} account{{ subscriptions.tracked_accounts|pluralize }} billing has looked at so far
+      (a Subscription row is created the first time a user's plan is checked, not at signup - see apps/billing/entitlements.py).
+      MRR is the sum of what each currently-paying subscriber actually locked in when they upgraded, not count &times;
+      today's ₦{{ subscriptions.pro_price|floatformat:0 }}/month price - so changing the Pro price only affects future
+      upgrades, never retroactively "charges" existing subscribers more. There's no payment ledger yet (the upgrade
+      flow is mocked), so lifetime/historical revenue isn't shown here on purpose rather than guessed at.
+    </p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card">
+        <p class="viq-label">Monthly Recurring Revenue</p>
+        <p class="viq-value viq-value-ok">₦{{ subscriptions.mrr|floatformat:0 }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Annual Recurring Revenue (projected)</p>
+        <p class="viq-value">₦{{ subscriptions.arr|floatformat:0 }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Paying Pro accounts</p>
+        <p class="viq-value">{{ subscriptions.paying_pro_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Free &rarr; Pro conversion</p>
+        <p class="viq-value">{{ subscriptions.conversion_rate }}%</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Free accounts</p>
+        <p class="viq-value viq-value-muted">{{ subscriptions.free_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">On free trial</p>
+        <p class="viq-value">{{ subscriptions.trialing_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Complimentary Pro (admin-granted)</p>
+        <p class="viq-value">{{ subscriptions.comp_pro_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Cancelling (still Pro until period end)</p>
+        <p class="viq-value {% if subscriptions.cancelling_count %}viq-value-warn{% endif %}">{{ subscriptions.cancelling_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Lapsed (was Pro, now Free)</p>
+        <p class="viq-value {% if subscriptions.lapsed_count %}viq-value-warn{% endif %}">{{ subscriptions.lapsed_count }}</p>
+      </div>
+    </div>
+
+    {% if subscriptions.recent_pro %}
+    <div class="viq-panel" style="margin-top:16px;">
+      <div class="viq-panel-header">Most recent Pro subscribers</div>
+      {% for s in subscriptions.recent_pro %}
+      <a href="{% url 'admin:billing_subscription_change' s.id %}" class="viq-panel-row">
+        <div style="min-width:0;">
+          <p class="viq-panel-row-title">{{ s.user.name }}</p>
+          <p class="viq-panel-row-sub">{{ s.user.email }}</p>
+        </div>
+        <span class="viq-panel-row-amount">{% if s.is_complimentary %}Comp{% else %}₦{{ subscriptions.pro_price|floatformat:0 }}/mo{% endif %}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <p class="viq-hint" style="margin-top:12px;margin-bottom:0;">
+      To comp an account onto Pro for free (no payment, no expiry), go to
+      <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>,
+      select the account(s), and use the "Grant free Pro access" action.
+    </p>
+  </div>
+
+  <!-- ============================================================
+       PLANNED SECTIONS BELOW - not wired to real data yet.
+       Support ticketing and system uptime monitoring don't exist yet, so
+       there's nothing real to show for those. Subscriptions/MRR/ARR moved
+       out of this "planned" treatment above once the billing system shipped -
+       same pattern applies here: build the feature, replace the em-dashes
+       in vendoriq/admin_dashboard.py with real queries, drop the "planned"
+       classes. Until then: dashed borders, muted text, "Planned" pills -
+       deliberately unmistakable as placeholders, not live numbers.
+       ============================================================ -->
+
+  <!-- Support (planned) -->
+  <div class="viq-section">
+    <p class="viq-section-title">Support <span class="viq-badge-planned">Planned</span></p>
+    <p class="viq-planned-note">No support ticketing system exists yet - this app has no way for a store owner to raise an issue with the VendorIQ team.</p>
+    <div class="viq-grid viq-grid-3">
+      <div class="viq-card-planned"><p class="viq-label">Open tickets</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Resolved this week</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Avg first response time</p><p class="viq-value-planned">—</p></div>
+    </div>
+  </div>
+
+  <!-- System health (planned) -->
+  <div class="viq-section">
+    <p class="viq-section-title">System health <span class="viq-badge-planned">Planned</span></p>
+    <p class="viq-planned-note">Celery/Redis are running (see the "background tasks" note in the README), but nothing currently monitors or reports on them here - no uptime tracking, queue depth, or error-rate dashboard wired up yet.</p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card-planned"><p class="viq-label">API uptime</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Background job queue</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Failed jobs (24h)</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Email delivery rate</p><p class="viq-value-planned">—</p></div>
+    </div>
+  </div>
+
+  <!-- Recent activity -->
+  <div class="viq-section" style="margin-bottom:16px;">
+    <p class="viq-section-title">Recent activity</p>
+    <div class="viq-grid viq-grid-4">
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Recent users</div>
+        {% for u in recent_users %}
+        <a href="{% url 'admin:authentication_user_change' u.id %}" class="viq-panel-row" style="display:block;">
+          <p class="viq-panel-row-title">{{ u.name }}</p>
+          <p class="viq-panel-row-sub">{{ u.email }} · {{ u.created_at|date:"d M" }}</p>
+        </a>
+        {% empty %}
+        <p class="viq-panel-empty">No users yet.</p>
+        {% endfor %}
+      </div>
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Recent stores</div>
+        {% for s in recent_stores %}
+        <a href="{% url 'admin:stores_store_change' s.id %}" class="viq-panel-row" style="display:block;">
+          <p class="viq-panel-row-title">{{ s.name }}</p>
+          <p class="viq-panel-row-sub">{{ s.owner.name }} · {{ s.created_at|date:"d M" }}</p>
+        </a>
+        {% empty %}
+        <p class="viq-panel-empty">No stores yet.</p>
+        {% endfor %}
+      </div>
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Recent sales</div>
+        {% for sale in recent_sales %}
+        <a href="{% url 'admin:sales_sale_change' sale.id %}" class="viq-panel-row">
+          <div style="min-width:0;">
+            <p class="viq-panel-row-title">{{ sale.store.name }}</p>
+            <p class="viq-panel-row-sub">{{ sale.recorded_by.name|default:"—" }} · {{ sale.created_at|date:"d M, H:i" }}</p>
+          </div>
+          <p class="viq-panel-row-amount">₦{{ sale.total_amount|floatformat:0 }}</p>
+        </a>
+        {% empty %}
+        <p class="viq-panel-empty">No sales yet.</p>
+        {% endfor %}
+      </div>
+
+      <div class="viq-panel">
+        <div class="viq-panel-header">Recent logins</div>
+        {% for event in recent_logins %}
+        <div class="viq-panel-row" style="display:block;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <p class="viq-panel-row-title">{{ event.email_attempted }}</p>
+            {% if event.success %}
+            <span class="viq-badge viq-badge-ok">OK</span>
+            {% else %}
+            <span class="viq-badge viq-badge-fail">FAILED</span>
+            {% endif %}
+          </div>
+          <p class="viq-panel-row-sub">{{ event.device_type }} · {{ event.browser }} · {{ event.ip_address|default:"—" }} · {{ event.created_at|date:"d M, H:i" }}</p>
+        </div>
+        {% empty %}
+        <p class="viq-panel-empty">No login activity yet.</p>
+        {% endfor %}
+      </div>
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

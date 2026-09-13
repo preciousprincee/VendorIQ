@@ -1,0 +1,122 @@
+  /*
+    Self-contained CSS for this custom dashboard, deliberately NOT relying on
+    Tailwind utility classes (even Unfold's own dark: variants). Unfold ships
+    a precompiled Tailwind bundle scoped to its own templates - a custom
+    admin/index.html isn't scanned by it, so classes like dark:bg-gray-900
+    silently produce no CSS at all here even though they work elsewhere in
+    Unfold (see unfoldadmin/django-unfold#971, an open issue about exactly
+    this). Plain CSS in a <style> tag always works regardless of that.
+
+    Dark mode: Unfold uses Tailwind's `darkMode: "class"` strategy, which
+    means an ancestor with class="dark" (applied to <html> by Unfold's own
+    theme switcher) - so html.dark below is the correct hook, not a guess.
+  */
+  .viq-hint { font-size: 11px; color: #6b7280; margin: 0 0 24px; }
+  html.dark .viq-hint { color: #9ca3af; }
+
+  .viq-section { margin-bottom: 32px; }
+  .viq-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #6b7280; margin: 0 0 12px; }
+  html.dark .viq-section-title { color: #9ca3af; }
+
+  .viq-grid { display: grid; gap: 16px; }
+  .viq-grid-5 { grid-template-columns: repeat(5, minmax(0,1fr)); }
+  .viq-grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .viq-grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  @media (max-width: 1024px) { .viq-grid-5, .viq-grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 640px) { .viq-grid-5, .viq-grid-4, .viq-grid-3 { grid-template-columns: 1fr; } }
+
+  .viq-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; }
+  html.dark .viq-card { background: #18181b; border-color: #27272a; }
+
+  .viq-label { font-size: 11.5px; font-weight: 500; color: #6b7280; margin: 0 0 6px; }
+  html.dark .viq-label { color: #9ca3af; }
+
+  .viq-value { font-size: 22px; font-weight: 700; margin: 0; color: #111827; }
+  html.dark .viq-value { color: #f4f4f5; }
+  .viq-value-warn { color: #d97706; }
+  html.dark .viq-value-warn { color: #fbbf24; }
+  .viq-value-ok { color: #16a34a; }
+  html.dark .viq-value-ok { color: #4ade80; }
+  .viq-value-muted { color: #9ca3af; }
+
+  .viq-hint-sm { font-size: 10.5px; color: #9ca3af; margin: 4px 0 0; }
+
+  .viq-panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  html.dark .viq-panel { background: #18181b; border-color: #27272a; }
+  .viq-panel-header { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; font-size: 13px; font-weight: 700; color: #111827; }
+  html.dark .viq-panel-header { border-color: #27272a; color: #f4f4f5; }
+  .viq-panel-row { padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #f3f4f6; text-decoration: none; color: inherit; }
+  html.dark .viq-panel-row { border-color: #27272a; }
+  .viq-panel-row:last-child { border-bottom: none; }
+  a.viq-panel-row:hover { background: #f9fafb; }
+  html.dark a.viq-panel-row:hover { background: #202023; }
+  .viq-panel-row-title { font-size: 13px; margin: 0; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  html.dark .viq-panel-row-title { color: #f4f4f5; }
+  .viq-panel-row-sub { font-size: 11px; color: #6b7280; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  html.dark .viq-panel-row-sub { color: #9ca3af; }
+  .viq-panel-row-amount { font-size: 12.5px; font-weight: 600; font-family: 'Courier New', monospace; flex-shrink: 0; color: #111827; }
+  html.dark .viq-panel-row-amount { color: #f4f4f5; }
+  .viq-panel-empty { padding: 12px 16px; font-size: 13px; color: #9ca3af; margin: 0; }
+
+  .viq-svg-line { stroke: #1e8449; }
+  html.dark .viq-svg-line { stroke: #34a853; }
+
+  .viq-pill { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; text-decoration: none; }
+  html.dark .viq-pill { background: rgba(146,64,14,.25); color: #fbbf24; }
+  a.viq-pill:hover { text-decoration: underline; }
+
+  .viq-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; }
+  .viq-badge-ok { background: #dcfce7; color: #15803d; }
+  html.dark .viq-badge-ok { background: rgba(21,128,61,.25); color: #4ade80; }
+  .viq-badge-fail { background: #fee2e2; color: #b91c1c; }
+  html.dark .viq-badge-fail { background: rgba(185,28,28,.25); color: #f87171; }
+
+  /* Planned/placeholder cards - for metrics that need a feature (billing,
+     support tickets, uptime monitoring) which doesn't exist yet. Visually
+     distinct from real KPI cards on purpose: dashed border, muted text, an
+     em-dash instead of a number, and a "Planned" pill - so nobody mistakes
+     this for live data. Remove the "planned" treatment (and wire up a real
+     value) app-section by app-section as each underlying feature ships. */
+  .viq-card-planned { background: transparent; border: 1px dashed #d1d5db; border-radius: 10px; padding: 16px; }
+  html.dark .viq-card-planned { border-color: #3f3f46; }
+  .viq-value-planned { font-size: 22px; font-weight: 700; margin: 0; color: #d1d5db; }
+  html.dark .viq-value-planned { color: #52525b; }
+  .viq-badge-planned { display: inline-block; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-radius: 5px; background: #f3f4f6; color: #6b7280; margin-left: 6px; vertical-align: middle; }
+  html.dark .viq-badge-planned { background: #27272a; color: #9ca3af; }
+  .viq-planned-note { font-size: 12px; color: #6b7280; margin: 0 0 16px; padding: 10px 14px; background: #f9fafb; border-radius: 8px; border-left: 3px solid #d1d5db; }
+  html.dark .viq-planned-note { color: #9ca3af; background: #1f1f23; border-left-color: #3f3f46; }
+
+/* Added for the extended admin platform (system health, revenue, settings,
+   support pages) - kept in this shared partial so every custom admin page
+   includes it the same way index.html does, instead of re-declaring these
+   per template. */
+.viq-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #f3f4f6; }
+html.dark .viq-status-row { border-color: #27272a; }
+.viq-status-row:last-child { border-bottom: none; }
+.viq-status-label { font-size: 13px; font-weight: 500; color: #111827; margin: 0; }
+html.dark .viq-status-label { color: #f4f4f5; }
+.viq-status-sub { font-size: 11.5px; color: #6b7280; margin: 2px 0 0; }
+html.dark .viq-status-sub { color: #9ca3af; }
+.viq-status-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; flex-shrink: 0; }
+.viq-status-pill-ok { background: #dcfce7; color: #15803d; }
+html.dark .viq-status-pill-ok { background: rgba(21,128,61,.25); color: #4ade80; }
+.viq-status-pill-down { background: #fee2e2; color: #b91c1c; }
+html.dark .viq-status-pill-down { background: rgba(185,28,28,.25); color: #f87171; }
+.viq-status-pill-off { background: #f3f4f6; color: #6b7280; }
+html.dark .viq-status-pill-off { background: #27272a; color: #9ca3af; }
+.viq-status-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+
+.viq-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.viq-table th { text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 10.5px; color: #6b7280; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
+html.dark .viq-table th { color: #9ca3af; border-color: #27272a; }
+.viq-table td { padding: 10px 16px; border-bottom: 1px solid #f3f4f6; color: #111827; }
+html.dark .viq-table td { color: #f4f4f5; border-color: #27272a; }
+.viq-table tr:last-child td { border-bottom: none; }
+@media (max-width: 640px) {
+  .viq-table, .viq-table thead, .viq-table tbody, .viq-table th, .viq-table td, .viq-table tr { display: block; }
+  .viq-table thead { display: none; }
+  .viq-table tr { border-bottom: 1px solid #e5e7eb; padding: 10px 0; }
+  html.dark .viq-table tr { border-color: #27272a; }
+  .viq-table td { border: none; padding: 4px 16px; }
+  .viq-table td::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #9ca3af; margin-bottom: 2px; }
+}

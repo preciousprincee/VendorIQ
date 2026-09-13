@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------
+   Theme tokens. :root = light mode (default). .dark = dark mode, toggled
+   by adding/removing the "dark" class on <html> (see ThemeContext.jsx).
+   Values are space-separated R G B triplets so Tailwind's
+   rgb(var(--x) / <alpha-value>) pattern can apply opacity utilities.
+--------------------------------------------------------------------- */
+:root {
+  --c-navy-950: 250 250 247; /* page background */
+  --c-navy-900: 255 255 255; /* header / sidebar surface */
+  --c-navy-800: 255 255 255; /* card surface */
+  --c-navy-700: 229 231 226; /* border */
+  --c-navy-600: 209 213 204; /* stronger border / divider */
+
+  --c-text: 17 24 21;        /* primary text */
+  --c-text-muted: 107 114 106;
+  --c-text-dim: 156 163 150;
+
+  --c-brand-50: 234 247 239;
+  --c-brand-400: 52 168 112;
+  --c-brand-500: 30 132 73;
+  --c-brand-600: 22 112 60;
+  --c-brand-700: 18 92 49;
+
+  color-scheme: light;
+}
+
+.dark {
+  --c-navy-950: 9 14 12;
+  --c-navy-900: 15 21 18;
+  --c-navy-800: 22 30 26;
+  --c-navy-700: 38 48 43;
+  --c-navy-600: 52 64 58;
+
+  --c-text: 240 244 241;
+  --c-text-muted: 140 163 150;
+  --c-text-dim: 90 110 100;
+
+  --c-brand-50: 22 40 30;
+  --c-brand-400: 61 181 124;
+  --c-brand-500: 45 158 102;
+  --c-brand-600: 34 138 87;
+  --c-brand-700: 24 110 68;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-navy-950 text-slate-text font-sans transition-colors duration-150; margin: 0; padding: 0; }
+  :focus-visible { @apply outline-2 outline-saffron-500 outline-offset-2; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { @apply bg-navy-950; }
+  ::-webkit-scrollbar-thumb { @apply bg-navy-600 rounded-full; }
+}
+
+@layer components {
+  .stat-number { @apply font-mono text-slate-text tabular-nums; }
+  .profit-positive { @apply text-brand-500 animate-profit-pulse; }
+
+  .card { @apply bg-navy-800 rounded-2xl border border-navy-700 shadow-sm; }
+  .card-accent { @apply card border-l-4 border-l-brand-500 bg-brand-50/40 dark:bg-brand-500/5; }
+  .card-hero { @apply bg-brand-700 text-white rounded-2xl shadow-md; }
+
+  .btn-primary { @apply bg-brand-500 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-600 active:bg-brand-700 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm; }
+  .btn-ghost { @apply text-slate-muted hover:text-slate-text hover:bg-navy-700 px-4 py-2.5 rounded-xl transition-colors duration-150; }
+  .btn-danger { @apply bg-red-50 text-red-600 border border-red-200 px-4 py-2.5 rounded-xl hover:bg-red-100 transition-colors duration-150 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-800/50; }
+
+  .input { @apply bg-navy-950 border border-navy-700 text-slate-text rounded-xl px-3 py-2.5 w-full placeholder:text-slate-dim focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-colors duration-150 font-sans text-sm; }
+  .label { @apply text-xs font-medium text-slate-muted uppercase tracking-wider mb-1.5 block; }
+
+  .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-muted hover:text-slate-text hover:bg-navy-700 transition-colors duration-150 text-sm font-medium cursor-pointer; }
+  .nav-item-active { @apply nav-item text-brand-500 bg-brand-50; }
+
+  .badge { @apply text-xs font-mono px-2 py-0.5 rounded-full; }
+  .badge-warning { @apply badge bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400; }
+  .badge-danger { @apply badge bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400; }
+  .badge-success { @apply badge bg-brand-50 text-brand-600 dark:text-brand-400; }
+
+  .divider { @apply border-t border-navy-700; }
+}

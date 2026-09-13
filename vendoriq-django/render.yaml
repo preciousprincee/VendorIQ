@@ -1,0 +1,119 @@
+services:
+  - type: redis
+    name: vendoriq-redis
+    plan: starter
+    ipAllowList: [] # only reachable from other services in this Render account/private network
+    maxmemoryPolicy: allkeys-lru # cache data only - fine to evict the oldest entries under memory pressure
+
+  - type: web
+    name: vendoriq-api
+    runtime: python
+    plan: starter # bump to Standard/Pro as real traffic arrives - more CPU = more gunicorn workers
+    buildCommand: >
+      pip install -r requirements.txt &&
+      python manage.py migrate --no-input &&
+      python manage.py collectstatic --no-input
+    # --workers: gthread workers each handle several requests concurrently via
+    #   threads, so one slow request (an AI call, an email send) doesn't block
+    #   every other request on that worker the way a plain sync worker would.
+    # --timeout 60: gives the Groq AI call and outbound email room to finish
+    #   instead of gunicorn killing the worker mid-request.
+    # --max-requests: recycles each worker after it's handled ~1000 requests
+    #   (±200 jitter, so they don't all restart in the same second). This is
+    #   a safety net against slow per-process memory growth ever compounding
+    #   into an OOM kill over a long sustained-traffic day - a fresh worker
+    #   process every so often costs nothing under normal load and bounds
+    #   the worst case.
+    startCommand: >
+      gunicorn vendoriq.wsgi:application
+      --workers ${WEB_CONCURRENCY:-3}
+      --worker-class gthread
+      --threads ${GUNICORN_THREADS:-4}
+      --timeout 60
+      --max-requests 1000
+      --max-requests-jitter 200
+      --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: vendoriq-api.onrender.com
+      - key: DATABASE_URL
+        sync: false # paste in Supabase's pooler connection string (see README)
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://your-app.vercel.app
+      - key: GROQ_API_KEY
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false # optional - leave unset to just not offer Google sign-in
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false # optional - leave unset to just not use error monitoring
+      # Shared cache across every gunicorn worker/dyno - this is what lets
+      # DashboardView/TrendView/ProfitabilityView/NotificationsView stay cheap
+      # under thousands of concurrent users instead of each request
+      # recomputing the same aggregation from Postgres. If this service is
+      # ever unreachable, django-redis (IGNORE_EXCEPTIONS=True, see
+      # settings.py) makes the app fall back to querying the DB directly
+      # rather than erroring out.
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vendoriq-redis
+          property: connectionString
+
+  # Runs background jobs (currently: invoice emails) so a slow/unreachable
+  # SMTP provider costs worker time here, not a web request thread. Without
+  # REDIS_URL set, CELERY_TASK_ALWAYS_EAGER makes tasks run inline in the web
+  # service instead (see settings.py) - so this service only matters once
+  # REDIS_URL is actually wired up, which it is below.
+  - type: worker
+    name: vendoriq-celery-worker
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # --concurrency 2: two worker threads is plenty for occasional invoice
+    #   emails; bump this (or switch to --pool prefork with more processes)
+    #   if background task volume grows meaningfully.
+    # --without-heartbeat/--without-gossip/--without-mingle: this app has a
+    #   single worker instance, so the usual multi-worker coordination
+    #   features are pure overhead - trims idle Redis chatter.
+    startCommand: >
+      celery -A vendoriq worker
+      --loglevel=info
+      --concurrency=2
+      --without-heartbeat
+      --without-gossip
+      --without-mingle
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false # same Supabase pooler string as vendoriq-api
+      - key: GROQ_API_KEY
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: SENTRY_DSN
+        sync: false # same DSN as vendoriq-api - catches background task failures (e.g. invoice emails) too, not just web request errors
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vendoriq-redis
+          property: connectionString

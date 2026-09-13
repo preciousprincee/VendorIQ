@@ -1,0 +1,63 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <div class="viq-section">
+    <p class="viq-section-title">Support <span class="viq-badge-planned">Planned</span></p>
+    <p class="viq-planned-note">
+      No support ticketing system exists yet - there's currently no way for a store owner to raise an issue from
+      inside VendorIQ, and nothing here is backed by real data. This page is a placeholder for where that would live
+      once it's built (a Ticket model, a queue, assignment/resolution tracking), matching the same "planned" pattern
+      used elsewhere in this dashboard rather than a fake list of tickets.
+    </p>
+    <div class="viq-grid viq-grid-3">
+      <div class="viq-card-planned"><p class="viq-label">Open tickets</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Resolved this week</p><p class="viq-value-planned">—</p></div>
+      <div class="viq-card-planned"><p class="viq-label">Avg first response time</p><p class="viq-value-planned">—</p></div>
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">In the meantime</p>
+    <div class="viq-panel">
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">Recent login activity</p>
+          <p class="viq-status-sub">The closest thing to an audit trail today - useful for "a user says they can't log in"</p>
+        </div>
+        <a href="{% url 'admin:authentication_loginevent_changelist' %}" class="viq-pill">View</a>
+      </div>
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">Users</p>
+          <p class="viq-status-sub">Look up an account directly by email</p>
+        </div>
+        <a href="{% url 'admin:authentication_user_changelist' %}" class="viq-pill">View</a>
+      </div>
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">Subscriptions</p>
+          <p class="viq-status-sub">Check or fix a user's plan (including granting free Pro access)</p>
+        </div>
+        <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">View</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

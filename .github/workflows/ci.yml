@@ -1,0 +1,115 @@
+name: CI
+
+# Runs on every push and every pull request - this is the "CI" half of
+# CI/CD: catching a broken test or a broken frontend build before it ever
+# reaches Render. Deployment itself ("CD") is handled separately by Render's
+# own native auto-deploy-on-push, not by this workflow - see the README for
+# how the two are wired together (branch protection makes this job a
+# required check, so a broken main branch can't happen in the first place).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+
+    # A real Postgres, not SQLite - this project's production database is
+    # Postgres (via Supabase), and Postgres/SQLite behave differently enough
+    # (constraints, locking, some query behavior) that testing against
+    # SQLite alone can pass CI while still breaking in production.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vendoriq
+          POSTGRES_PASSWORD: vendoriq
+          POSTGRES_DB: vendoriq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: vendoriq-django
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: vendoriq-django/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://vendoriq:vendoriq@localhost:5432/vendoriq_test
+          SECRET_KEY: ci-test-secret-key-not-used-anywhere-real
+          DEBUG: 'False'
+          ALLOWED_HOSTS: localhost,127.0.0.1
+        run: python manage.py migrate --no-input
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://vendoriq:vendoriq@localhost:5432/vendoriq_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-used-anywhere-real
+          DEBUG: 'False'
+          ALLOWED_HOSTS: localhost,127.0.0.1
+          # Tests never call Groq for real - AI-related tests either mock
+          # the call or aren't written yet - but GROQ_API_KEY needs to be a
+          # non-empty string or Django settings.py's config would treat it
+          # as unset in a way unrelated to what's actually being tested here.
+          GROQ_API_KEY: ci-placeholder-not-a-real-key
+        run: pytest -v
+
+  frontend-build:
+    name: Frontend build check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vendoriq-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        # npm ci (the normal CI choice - faster, stricter) requires a
+        # committed package-lock.json, which this project doesn't have yet.
+        # npm install works either way. Once you run `npm install` locally
+        # once and commit the resulting package-lock.json, switch this to
+        # `npm ci` and add back `cache: 'npm'` / `cache-dependency-path`
+        # above for faster, more reproducible builds.
+        run: npm install
+
+      - name: Build
+        run: npm run build

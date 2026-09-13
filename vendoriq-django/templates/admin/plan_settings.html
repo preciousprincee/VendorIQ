@@ -1,0 +1,107 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <p class="viq-hint">
+    Read-only - this mirrors <code>apps/billing/plans.py</code>, the single source of truth the app itself reads
+    for pricing, limits, and feature access. Plan <strong>limits and features</strong> are code-driven (nothing here
+    is stored in the database for those), so change those in that file, then redeploy. <strong>Price and free trial
+    length</strong> are the two exceptions - both are live, database-backed settings you can change below with no
+    redeploy, and both take effect immediately, including for accounts already paying or mid-trial.
+  </p>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Pro plan price</p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card">
+        <p class="viq-label">Current price</p>
+        <p class="viq-value">₦{{ pro_price|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+      </div>
+    </div>
+    <p class="viq-hint" style="margin-top:10px;margin-bottom:0;">
+      This is a live setting, not a code/environment value - change it from
+      <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Billing &rsaquo; Pro plan price</a>
+      and it takes effect immediately for every <strong>new</strong> upgrade (Subscription page, upgrade modal, this
+      page all show the new price right away). It does <strong>not</strong> retroactively change what someone
+      already paying is charged - each subscriber locks in the price shown at the moment they upgrade (see
+      <code>Subscription.price_ngn</code> in <code>apps/billing/models.py</code>), so MRR on the
+      <a href="{% url 'admin_revenue' %}" class="viq-pill">Revenue page</a> reflects what people actually agreed to
+      pay, not subscriber count &times; today's price.
+    </p>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Free trial</p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card">
+        <p class="viq-label">Current trial length</p>
+        <p class="viq-value">{{ trial_period_days }} day{{ trial_period_days|pluralize }}</p>
+      </div>
+    </div>
+    <p class="viq-hint" style="margin-top:10px;margin-bottom:0;">
+      This is a live setting, not a code/environment value - change it from
+      <a href="{% url 'admin:billing_trialsettings_changelist' %}" class="viq-pill">Billing &rsaquo; Free trial length</a>
+      and it takes effect immediately for every account, including anyone currently mid-trial (remaining trial time
+      is always computed from this one number rather than stored per account - see
+      <code>Subscription.is_trial_active</code> in <code>apps/billing/models.py</code>). A user gets one trial ever
+      unless an admin resets their eligibility from
+      <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>.
+    </p>
+  </div>
+
+  {% for code, plan in plans.items %}
+  <div class="viq-section">
+    <p class="viq-section-title">{{ plan.name }} plan</p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card">
+        <p class="viq-label">Price</p>
+        <p class="viq-value">₦{{ plan.price_ngn|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Max stores</p>
+        <p class="viq-value">{{ plan.limits.max_stores|default:"Unlimited" }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Max products / store</p>
+        <p class="viq-value">{{ plan.limits.max_products_per_store|default:"Unlimited" }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Max users / store</p>
+        <p class="viq-value">{{ plan.limits.max_users_per_store|default:"Unlimited" }}</p>
+      </div>
+    </div>
+
+    <div class="viq-panel" style="margin-top:12px;">
+      <div class="viq-panel-header">What's included</div>
+      {% for item in plan.includes %}
+      <div class="viq-panel-row">
+        <span class="viq-panel-row-title">{{ item }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <p class="viq-hint" style="margin-top:8px;">
+    To comp an individual account onto Pro for free regardless of the price above, use
+    <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>
+    &rsaquo; select account(s) &rsaquo; "Grant free Pro access".
+  </p>
+
+</div>
+{% endblock %}

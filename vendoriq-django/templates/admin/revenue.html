@@ -1,0 +1,134 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <p class="viq-hint">
+    Platform-wide subscription revenue. MRR is the sum of what each currently-paying subscriber actually locked in
+    at the time they upgraded (see the "Price locked in" column below) - not subscriber count &times; today's price,
+    so a change to <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Pro plan price</a>
+    only affects future upgrades. There's no payment ledger yet (the upgrade flow is mocked until a real gateway is
+    connected), so this reflects the current snapshot, not historical totals.
+  </p>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Overview</p>
+    <div class="viq-grid viq-grid-4">
+      <div class="viq-card">
+        <p class="viq-label">Monthly Recurring Revenue</p>
+        <p class="viq-value viq-value-ok">₦{{ subscriptions.mrr|floatformat:0 }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Annual Recurring Revenue (projected)</p>
+        <p class="viq-value">₦{{ subscriptions.arr|floatformat:0 }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Price per Pro subscription</p>
+        <p class="viq-value">₦{{ subscriptions.pro_price|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Free &rarr; Pro conversion</p>
+        <p class="viq-value">{{ subscriptions.conversion_rate }}%</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Accounts by plan</p>
+    <div class="viq-grid viq-grid-5">
+      <div class="viq-card">
+        <p class="viq-label">Paying Pro</p>
+        <p class="viq-value">{{ subscriptions.paying_pro_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Complimentary Pro</p>
+        <p class="viq-value">{{ subscriptions.comp_pro_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">On free trial</p>
+        <p class="viq-value">{{ subscriptions.trialing_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Free</p>
+        <p class="viq-value viq-value-muted">{{ subscriptions.free_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Cancelling</p>
+        <p class="viq-value {% if subscriptions.cancelling_count %}viq-value-warn{% endif %}">{{ subscriptions.cancelling_count }}</p>
+      </div>
+      <div class="viq-card">
+        <p class="viq-label">Lapsed</p>
+        <p class="viq-value {% if subscriptions.lapsed_count %}viq-value-warn{% endif %}">{{ subscriptions.lapsed_count }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">New Pro subscriptions (last 30 days)</p>
+    <div class="viq-card">
+      <p class="viq-value" style="font-size:18px;margin-bottom:8px;">{{ new_pro_growth.total }} new subscription{{ new_pro_growth.total|pluralize }}</p>
+      {% if new_pro_growth.points %}
+      <svg viewBox="0 0 280 56" style="width:100%;height:64px;" preserveAspectRatio="none">
+        <polyline points="{{ new_pro_growth.points }}" class="viq-svg-line" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {% else %}
+      <p class="viq-panel-empty" style="padding:0;">Not enough data yet to draw a trend line.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Pro subscribers</p>
+    <div class="viq-panel">
+      {% if subscriptions.recent_pro %}
+      <table class="viq-table">
+        <thead>
+          <tr><th>Account</th><th>Type</th><th>Price locked in</th><th>Since</th><th>Renews</th></tr>
+        </thead>
+        <tbody>
+          {% for s in subscriptions.recent_pro %}
+          <tr>
+            <td data-label="Account">
+              <a href="{% url 'admin:billing_subscription_change' s.id %}">{{ s.user.name }}</a>
+              <div class="viq-panel-row-sub">{{ s.user.email }}</div>
+            </td>
+            <td data-label="Type">{% if s.is_complimentary %}Complimentary{% else %}Paying{% endif %}</td>
+            <td data-label="Price locked in">
+              {% if s.is_complimentary %}&mdash;{% else %}₦{{ s.price_ngn|floatformat:0 }}/mo{% endif %}
+            </td>
+            <td data-label="Since">{{ s.current_period_start|date:"M j, Y"|default:"—" }}</td>
+            <td data-label="Renews">{% if s.is_complimentary %}Doesn't expire{% else %}{{ s.current_period_end|date:"M j, Y"|default:"—" }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="viq-panel-empty">No Pro subscribers yet.</p>
+      {% endif %}
+    </div>
+    <p class="viq-hint" style="margin-top:12px;margin-bottom:0;">
+      MRR above is the sum of what each paying subscriber actually locked in (the "Price locked in" column here),
+      not a simple count &times; today's price - so changing
+      <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Revenue &amp; Billing &rsaquo; Pro plan price</a>
+      only affects new upgrades going forward, never retroactively "charges" someone who's already subscribed more
+      than they agreed to. Manage individual subscriptions (including granting free Pro access) from
+      <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>.
+    </p>
+  </div>
+
+</div>
+{% endblock %}
