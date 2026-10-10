@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Store, Plus, BarChart3, Package, Users, X, Trash2 } from 'lucide-react'
+import { Store, Plus, Package, Users, X, Trash2, User } from 'lucide-react'
 import { useStore } from '../context/StoreContext'
 import { useAuth } from '../context/AuthContext'
 import { useSubscription } from '../context/SubscriptionContext'
 import UsageLimit from '../components/billing/UsageLimit'
+import ConfirmDialog from '../components/ConfirmDialog'
 import api from '../lib/api'
 import { getErrorMessage } from '../lib/utils'
 import toast from 'react-hot-toast'
 
 export default function StoresPage() {
-  const { selectStore } = useStore()
+  const { selectStore, clearStore } = useStore()
   const { user } = useAuth()
   const { limits } = useSubscription()
   const navigate = useNavigate()
@@ -19,6 +20,8 @@ export default function StoresPage() {
   const [creating, setCreating] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', location: '' })
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fetchStores = async () => {
     try {
@@ -34,6 +37,7 @@ export default function StoresPage() {
   useEffect(() => { fetchStores() }, [])
 
   const handleSelect = (store) => {
+    sessionStorage.removeItem('viq_account_only')
     selectStore(store)
     navigate('/dashboard')
   }
@@ -54,15 +58,23 @@ export default function StoresPage() {
     }
   }
 
-  const handleDelete = async (e, store) => {
+  const handleDelete = (e, store) => {
     e.stopPropagation()
-    if (!confirm(`Delete "${store.name}"? This will permanently remove all its products, sales, invoices, and staff. This cannot be undone.`)) return
+    setPendingDelete(store)
+  }
+
+  const confirmDelete = async () => {
+    const store = pendingDelete
+    setDeleting(true)
     try {
       await api.delete(`/stores/${store.id}/`)
       toast.success(`${store.name} deleted`)
       fetchStores()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
     }
   }
 
@@ -74,14 +86,30 @@ export default function StoresPage() {
   return (
     <div className="min-h-screen bg-navy-900 px-4 py-10">
       <div className="max-w-lg mx-auto animate-fade-in">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-9 h-9 bg-brand-500 rounded-xl flex items-center justify-center">
-            <BarChart3 size={18} className="text-white" />
+        <div className="flex items-center justify-between gap-3 mb-8">
+          <div className="flex items-center gap-3">
+            {/* The real VendorIQ logo, same as the login screens and the in-store header
+                (this used to be a generic bar-chart placeholder). */}
+            <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
+              <img src="/icons/logo.png" alt="VendorIQ" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-text">VendorIQ</h1>
+              <p className="text-xs text-slate-dim">Pick a store to continue</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-text">VendorIQ</h1>
-            <p className="text-xs text-slate-dim">Pick a store to continue</p>
-          </div>
+          <button
+            onClick={() => {
+              // Profile/settings/referrals opened from here show without the
+              // in-store menu and tabs (see AppLayout's account-only mode).
+              sessionStorage.setItem('viq_account_only', '1')
+              navigate('/profile')
+            }}
+            aria-label="Profile"
+            className="w-10 h-10 rounded-full bg-brand-50 dark:bg-brand-500/15 border border-brand-500/30 flex items-center justify-center flex-shrink-0 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-500/25 transition-colors"
+          >
+            <User size={18} />
+          </button>
         </div>
 
         <p className="text-sm text-slate-muted mb-4">
@@ -108,7 +136,7 @@ export default function StoresPage() {
             ) : (
               allStores.map(store => (
                 <div key={store.id} role="button" tabIndex={0} onClick={() => handleSelect(store)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSelect(store) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(store) } }}
                   className="card w-full p-4 text-left hover:border-brand-500/50 hover:bg-navy-700/50 transition-all group cursor-pointer">
                   <div className="flex items-start justify-between">
                     <div>
@@ -144,17 +172,17 @@ export default function StoresPage() {
           <div className="card p-5 animate-fade-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-slate-text">New store</h3>
-              <button onClick={() => setShowForm(false)} className="text-slate-dim hover:text-slate-muted"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} aria-label="Close" className="text-slate-dim hover:text-slate-muted"><X size={18} /></button>
             </div>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
-                <label className="label">Store name</label>
-                <input className="input" placeholder="e.g. Mama Ngozi Store" value={form.name}
+                <label htmlFor="store-name" className="label">Store name</label>
+                <input id="store-name" className="input" placeholder="e.g. Mama Ngozi Store" value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
               </div>
               <div>
-                <label className="label">Location <span className="text-slate-dim normal-case">(optional)</span></label>
-                <input className="input" placeholder="e.g. Onitsha Main Market" value={form.location}
+                <label htmlFor="store-location" className="label">Location <span className="text-slate-dim normal-case">(optional)</span></label>
+                <input id="store-location" className="input" placeholder="e.g. Onitsha Main Market" value={form.location}
                   onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
               </div>
               <button type="submit" disabled={creating} className="btn-primary w-full">
@@ -170,6 +198,15 @@ export default function StoresPage() {
           </button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete "${pendingDelete?.name}"?`}
+        message="This will permanently remove all its products, sales, invoices, and staff. This cannot be undone."
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

@@ -1,28 +1,10 @@
-import { useState, useEffect } from 'react'
 import { Download, X } from 'lucide-react'
+import { useInstall } from '../../context/InstallContext'
 
 export default function InstallPrompt() {
-  const [prompt, setPrompt] = useState(null)
-  const [visible, setVisible] = useState(false)
+  const { canInstall, installed, bannerDismissed, dismissBanner, promptInstall } = useInstall()
 
-  useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault()
-      setPrompt(e)
-      setVisible(true)
-    }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [])
-
-  const handleInstall = async () => {
-    if (!prompt) return
-    prompt.prompt()
-    const { outcome } = await prompt.userChoice
-    if (outcome === 'accepted') setVisible(false)
-  }
-
-  if (!visible) return null
+  if (!canInstall || installed || bannerDismissed) return null
 
   return (
     <div className="fixed bottom-20 lg:bottom-4 left-4 right-4 z-50 animate-fade-in">
@@ -35,8 +17,8 @@ export default function InstallPrompt() {
           <p className="text-xs text-slate-dim">Add to your home screen for quick access</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button onClick={handleInstall} className="btn-primary text-xs px-3 py-2">Install</button>
-          <button onClick={() => setVisible(false)} className="text-slate-dim hover:text-slate-muted">
+          <button onClick={promptInstall} className="btn-primary text-xs px-3 py-2">Install</button>
+          <button onClick={dismissBanner} aria-label="Dismiss" className="text-slate-dim hover:text-slate-muted">
             <X size={16} />
           </button>
         </div>

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import App from './App.jsx'
 import { ThemeProvider } from './context/ThemeContext'
+import { InstallProvider } from './context/InstallContext'
 import { initSentry } from './lib/sentry'
 import './index.css'
 
@@ -24,7 +25,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
       <ThemeProvider>
-        <App />
+        <InstallProvider>
+          <App />
+        </InstallProvider>
       </ThemeProvider>
     </Sentry.ErrorBoundary>
   </React.StrictMode>,

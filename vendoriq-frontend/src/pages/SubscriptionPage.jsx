@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, Check, Store, Package, Users, Clock, Sparkles } from 'lucide-react'
+import { ChevronLeft, Store, Package, Users, Clock, Sparkles } from 'lucide-react'
 import { useSubscription } from '../context/SubscriptionContext'
 import { useStore } from '../context/StoreContext'
 import api from '../lib/api'
@@ -17,54 +17,37 @@ function UsageRow({ icon: Icon, label, used, limit, unit = '' }) {
         <p className="text-sm text-slate-text">{label}</p>
       </div>
       <p className="font-mono text-sm text-slate-dim flex-shrink-0">
-        {unlimited ? `${used} · Unlimited` : `${used}/${limit}${unit}`}
+        {unlimited ? `${used} \u00b7 Unlimited` : `${used}/${limit}${unit}`}
       </p>
     </div>
   )
 }
 
-function PlanCard({ code, plan, isCurrent, status, canManage, onUpgrade, onManageClick, onStartTrial, upgrading, canceling, startingTrial, showTrialCta }) {
-  const isPro = code === 'PRO'
-  const badgeLabel = status === 'TRIAL' ? 'Trial' : 'Current Plan'
-
+// One of the three billing-cycle cards (Monthly / 6-Month / Annual) from
+// GET /api/billing/subscription/'s `pricing` field - never a hardcoded
+// price, always the live value from apps/billing/models.py::PlanPrice.
+function CycleCard({ cycle, isCurrent, onUpgrade }) {
+  const badge = cycle.mostPopular ? 'Most Popular' : cycle.bestValue ? 'Best Value' : null
   return (
-    <div className={`card p-5 ${isCurrent && isPro ? 'border-brand-500/50' : ''}`}>
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-sm font-bold uppercase tracking-wider text-slate-text">{plan.name}</p>
-        {isCurrent && <span className="badge-success">{badgeLabel}</span>}
+    <div className={`card p-4 relative ${cycle.mostPopular ? 'border-brand-500/50' : ''} ${isCurrent ? 'border-brand-500' : ''}`}>
+      {badge && (
+        <span className="absolute -top-2.5 left-4 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+          {badge}
+        </span>
+      )}
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-dim mt-1">{cycle.label}</p>
+      <div className="flex items-baseline gap-1 mt-1 mb-0.5">
+        <p className="text-xl font-bold font-mono text-slate-text">{formatCurrency(cycle.priceNgn)}</p>
+        <p className="text-xs text-slate-dim">/{cycle.billingPeriodMonths === 1 ? 'month' : `${cycle.billingPeriodMonths} months`}</p>
       </div>
-      <div className="flex items-baseline gap-1 mb-3">
-        <p className="text-2xl font-bold font-mono text-slate-text">{formatCurrency(plan.priceNgn)}</p>
-        <p className="text-xs text-slate-dim">/month</p>
-      </div>
-      <p className="text-xs text-slate-dim mb-4">{plan.tagline}</p>
-      <div className="space-y-2 mb-5">
-        {plan.includes.map((item) => (
-          <div key={item} className="flex items-start gap-2">
-            <Check size={14} className={`mt-0.5 flex-shrink-0 ${isPro ? 'text-brand-500' : 'text-slate-dim'}`} />
-            <p className="text-xs text-slate-text">{item}</p>
-          </div>
-        ))}
-      </div>
-
+      {cycle.billingPeriodMonths > 1 && (
+        <p className="text-xs text-slate-dim mb-3">{formatCurrency(cycle.monthlyEquivalentNgn)}/month equivalent</p>
+      )}
+      {cycle.billingPeriodMonths === 1 && <p className="text-xs text-slate-dim mb-3">Flexible monthly plan.</p>}
       {isCurrent ? (
-        canManage && (
-          <button onClick={onManageClick} disabled={canceling} className="btn-ghost w-full text-sm">
-            {canceling ? 'Working\u2026' : 'Manage plan'}
-          </button>
-        )
+        <span className="badge-success">Current plan</span>
       ) : (
-        <div className="space-y-2">
-          <button onClick={onUpgrade} disabled={upgrading} className="btn-primary w-full text-sm">
-            {upgrading ? 'Upgrading\u2026' : `Upgrade to ${plan.name}`}
-          </button>
-          {showTrialCta && (
-            <button onClick={onStartTrial} disabled={startingTrial} className="btn-ghost w-full text-sm flex items-center justify-center gap-1.5">
-              <Sparkles size={14} />
-              {startingTrial ? 'Starting\u2026' : 'Or start your free trial'}
-            </button>
-          )}
-        </div>
+        <button onClick={onUpgrade} className="btn-primary w-full text-sm">Choose {cycle.label}</button>
       )}
     </div>
   )
@@ -74,10 +57,9 @@ export default function SubscriptionPage() {
   const navigate = useNavigate()
   const { activeStore } = useStore()
   const {
-    subscription, plan, isPro, status, cancelAtPeriodEnd, currentPeriodEnd, usage, limits, plansCatalog,
-    isTrialActive, trialDaysRemaining, hasUsedTrial, trialPeriodDays, viewerIsOwner, refresh,
+    subscription, plan, isPro, status, cancelAtPeriodEnd, currentPeriodEnd, usage, limits, pricing, billingCycle,
+    amountPaidNgn, isTrialActive, trialDaysRemaining, hasUsedTrial, trialPeriodDays, viewerIsOwner, refresh, openUpgradeModal,
   } = useSubscription()
-  const [upgrading, setUpgrading] = useState(false)
   const [working, setWorking] = useState(false)
   const [startingTrial, setStartingTrial] = useState(false)
   const [confirmingCancel, setConfirmingCancel] = useState(false)
@@ -89,19 +71,6 @@ export default function SubscriptionPage() {
         <div className="h-40 bg-navy-800 rounded-2xl animate-pulse" />
       </div>
     )
-  }
-
-  const handleUpgrade = async () => {
-    setUpgrading(true)
-    try {
-      await api.post('/billing/upgrade/')
-      toast.success("You're on Pro now \u2014 every feature is unlocked.")
-      await refresh()
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    } finally {
-      setUpgrading(false)
-    }
   }
 
   const handleStartTrial = async () => {
@@ -156,7 +125,7 @@ export default function SubscriptionPage() {
   return (
     <div className="p-5 lg:p-6 max-w-xl lg:mx-auto animate-fade-in">
       <div className="flex items-center gap-2 mb-5">
-        <button onClick={() => navigate('/profile')} className="text-slate-muted hover:text-slate-text lg:hidden">
+        <button onClick={() => navigate('/profile')} className="text-slate-muted hover:text-slate-text">
           <ChevronLeft size={22} />
         </button>
         <h1 className="text-xl font-bold text-slate-text">Subscription &amp; Billing</h1>
@@ -174,8 +143,8 @@ export default function SubscriptionPage() {
             You have full Pro access until your trial ends, then you'll move back to Free. Upgrade anytime to keep everything without a gap.
           </p>
           {viewerIsOwner && (
-            <button onClick={handleUpgrade} disabled={upgrading} className="btn-primary text-sm px-4 py-2">
-              {upgrading ? 'Upgrading\u2026' : 'Upgrade to Pro now'}
+            <button onClick={() => openUpgradeModal()} className="btn-primary text-sm px-4 py-2">
+              Upgrade to Pro now
             </button>
           )}
         </div>
@@ -193,31 +162,50 @@ export default function SubscriptionPage() {
         </div>
       )}
 
-      {isPro && !isTrialActive && !cancelAtPeriodEnd && currentPeriodEnd && (
-        <p className="text-xs text-slate-dim mb-5">
-          Renews {formatDate(currentPeriodEnd)}.
-        </p>
+      {isPro && !isTrialActive && (
+        <div className="card p-4 mb-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-text">
+              {formatCurrency(amountPaidNgn)} &middot; {pricing.find(c => c.billingCycle === billingCycle)?.label || billingCycle}
+            </p>
+            {!cancelAtPeriodEnd && currentPeriodEnd && (
+              <p className="text-xs text-slate-dim mt-0.5">Renews {formatDate(currentPeriodEnd)}</p>
+            )}
+          </div>
+          {canManagePlan && (
+            <button onClick={() => setConfirmingCancel(true)} disabled={working} className="btn-ghost text-sm">
+              {working ? 'Working\u2026' : 'Manage plan'}
+            </button>
+          )}
+        </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        {plansCatalog?.map((p) => (
-          <PlanCard
-            key={p.code}
-            code={p.code}
-            plan={p}
-            isCurrent={p.code === plan}
-            status={status}
-            canManage={p.code === plan && canManagePlan}
-            onUpgrade={handleUpgrade}
-            onManageClick={() => setConfirmingCancel(true)}
-            onStartTrial={handleStartTrial}
-            upgrading={upgrading}
-            canceling={working}
-            startingTrial={startingTrial}
-            showTrialCta={p.code === 'PRO' && showTrialCta}
+      <p className="text-xs font-semibold text-slate-dim uppercase tracking-widest mb-3">
+        {isPro ? 'Change plan' : 'Choose a plan'}
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {pricing.map((cycle) => (
+          <CycleCard
+            key={cycle.billingCycle}
+            cycle={cycle}
+            isCurrent={isPro && !isTrialActive && billingCycle === cycle.billingCycle}
+            onUpgrade={() => openUpgradeModal()}
           />
         ))}
       </div>
+
+      {showTrialCta && (
+        <div className="card p-4 mb-6 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-text">Free Trial</p>
+            <p className="text-xs text-slate-dim">{trialPeriodDays} days free, no payment required.</p>
+          </div>
+          <button onClick={handleStartTrial} disabled={startingTrial} className="btn-ghost text-sm flex items-center gap-1.5 flex-shrink-0">
+            <Sparkles size={14} />
+            {startingTrial ? 'Starting\u2026' : 'Start trial'}
+          </button>
+        </div>
+      )}
 
       {activeStore && (
         <>
@@ -232,10 +220,6 @@ export default function SubscriptionPage() {
           </div>
         </>
       )}
-
-      <p className="text-[11px] text-slate-dim text-center">
-        This is a demo upgrade flow — no payment is collected today. A real payment provider (e.g. Paystack or Flutterwave) can be connected later without changing how plans or limits work.
-      </p>
 
       <ConfirmDialog
         open={confirmingCancel}

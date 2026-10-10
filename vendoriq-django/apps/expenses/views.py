@@ -4,6 +4,8 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.http import HttpResponse
 import csv
+import re
+from django.utils.dateparse import parse_date
 from .models import Expense
 from .serializers import ExpenseSerializer
 from apps.stores.base_views import StoreScopedAPIView
@@ -22,6 +24,21 @@ EXPENSE_ROLES = ['OWNER', 'MANAGER']
 OWNER_ONLY = ['OWNER']
 
 
+def _parse_date_param(request, name):
+    """Returns (date | None, error_response | None). A malformed ?start= / ?end= used to reach the ORM as a raw string and raise ValidationError -> HTTP 500."""
+    raw = request.query_params.get(name)
+    if not raw:
+        return None, None
+    parsed = None
+    try:
+        parsed = parse_date(raw)
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        return None, Response({'error': f'{name} must be a date in YYYY-MM-DD format.'}, status=status.HTTP_400_BAD_REQUEST)
+    return parsed, None
+
+
 class ExpenseListCreateView(StoreScopedAPIView):
     allowed_roles = EXPENSE_ROLES
 
@@ -32,8 +49,12 @@ class ExpenseListCreateView(StoreScopedAPIView):
         if category:
             expenses = expenses.filter(category=category)
 
-        start = request.query_params.get('start')
-        end = request.query_params.get('end')
+        start, err = _parse_date_param(request, 'start')
+        if err:
+            return err
+        end, err = _parse_date_param(request, 'end')
+        if err:
+            return err
         if start:
             expenses = expenses.filter(incurred_on__gte=start)
         if end:
@@ -160,8 +181,12 @@ class ExportRecordsView(StoreScopedAPIView):
     def get(self, request, store_id):
         store = self.store
         require_data_export(store.owner)
-        start = request.query_params.get('start')
-        end = request.query_params.get('end')
+        start, err = _parse_date_param(request, 'start')
+        if err:
+            return err
+        end, err = _parse_date_param(request, 'end')
+        if err:
+            return err
 
         def csv_safe(value):
             """
@@ -201,7 +226,11 @@ class ExportRecordsView(StoreScopedAPIView):
         total_expenses = expenses.aggregate(t=Sum('amount'))['t'] or 0
 
         response = HttpResponse(content_type='text/csv')
-        filename = f"{store.name.replace(' ', '_')}_bookkeeping_{start or 'all'}_{end or timezone.now().date()}.csv"
+        # The store name is user-controlled: a quote breaks out of the
+        # Content-Disposition value and a newline makes Django raise
+        # BadHeaderError (HTTP 500). Reduce it to a safe ASCII slug.
+        safe_name = re.sub(r'[^A-Za-z0-9_-]+', '_', store.name).strip('_')[:60] or 'store'
+        filename = f"{safe_name}_bookkeeping_{start or 'all'}_{end or timezone.localdate()}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
 

@@ -15,3 +15,5 @@ django-unfold>=0.90,<1.0
 django-allauth>=65.0,<66.0
 dj-rest-auth>=7.0,<8.0
 sentry-sdk>=2.20,<3.0
+django-storages[s3]>=1.14.4,<2
+posthog>=3.7,<8

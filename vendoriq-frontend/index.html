@@ -9,11 +9,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="VendorIQ" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>VendorIQ</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Paystack's inline checkout popup (apps/billing - UpgradeModal.jsx).
+         Loaded globally rather than per-component so PaystackPop is ready
+         the instant the Upgrade button is clicked. No-op / unused if
+         PAYSTACK_PUBLIC_KEY isn't configured. -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
   </head>
   <body>
     <script>
@@ -25,8 +32,12 @@
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
+    <script type="module">
+      // Dev-mode PWA footgun: this worker is cache-first with no expiry, so
+      // registering it during `npm run dev` means any page you ever loaded
+      // once (an old build, a broken route) gets served from cache forever,
+      // even after the underlying code is fixed. Production only.
+      if (import.meta.env.PROD && 'serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch(console.error)
         })

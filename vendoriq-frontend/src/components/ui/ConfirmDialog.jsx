@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 /**
  * In-app confirmation dialog, styled to match the rest of VendorIQ instead
  * of the browser's native window.confirm() - which looks like an
@@ -8,16 +10,26 @@
  * browser popup.
  */
 export default function ConfirmDialog({ open, title, description, confirmLabel = 'Confirm', cancelLabel = 'Never mind', danger = false, working = false, onConfirm, onCancel }) {
+  const cancelRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    cancelRef.current?.focus()
+    const onKeyDown = (e) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onCancel])
+
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-fade-in" onClick={onCancel}>
-      <div className="card w-full sm:max-w-sm rounded-b-none sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-ui-title" className="card w-full sm:max-w-sm rounded-b-none sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="p-5">
-          <p className="text-sm font-semibold text-slate-text mb-1.5">{title}</p>
+          <p id="confirm-dialog-ui-title" className="text-sm font-semibold text-slate-text mb-1.5">{title}</p>
           {description && <p className="text-xs text-slate-dim leading-relaxed mb-5">{description}</p>}
           <div className="flex gap-2">
-            <button onClick={onCancel} disabled={working} className="btn-ghost flex-1 text-sm">
+            <button ref={cancelRef} onClick={onCancel} disabled={working} className="btn-ghost flex-1 text-sm">
               {cancelLabel}
             </button>
             <button

@@ -4,6 +4,7 @@ import { useStore } from '../context/StoreContext'
 import { useAuth } from '../context/AuthContext'
 import { useSubscription } from '../context/SubscriptionContext'
 import UsageLimit from '../components/billing/UsageLimit'
+import ConfirmDialog from '../components/ConfirmDialog'
 import api from '../lib/api'
 import { formatDate, getErrorMessage } from '../lib/utils'
 import toast from 'react-hot-toast'
@@ -25,6 +26,8 @@ export default function StaffPage() {
   const [editingId, setEditingId] = useState(null)
   const [editRole, setEditRole] = useState('')
   const [form, setForm] = useState({ email: '', role: 'CASHIER' })
+  const [pendingRemove, setPendingRemove] = useState(null)
+  const [removing, setRemoving] = useState(false)
   const fetchStaffRef = useRef(0)
 
   const fetchStaff = async () => {
@@ -77,14 +80,22 @@ export default function StaffPage() {
     }
   }
 
-  const handleRemove = async (member) => {
-    if (!confirm(`Remove ${member.user.name} from this store?`)) return
+  const handleRemove = (member) => {
+    setPendingRemove(member)
+  }
+
+  const confirmRemove = async () => {
+    const member = pendingRemove
+    setRemoving(true)
     try {
       await api.delete(`/stores/${activeStore.id}/staff/${member.id}/`)
       toast.success('Staff member removed')
       fetchStaff()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setRemoving(false)
+      setPendingRemove(null)
     }
   }
 
@@ -119,14 +130,14 @@ export default function StaffPage() {
           <h3 className="text-sm font-semibold text-slate-text mb-4">Add a staff member</h3>
           <form onSubmit={handleAdd} className="space-y-3">
             <div>
-              <label className="label">Their email address</label>
-              <input type="email" className="input" placeholder="staff@example.com"
+              <label htmlFor="staff-email" className="label">Their email address</label>
+              <input id="staff-email" type="email" className="input" placeholder="staff@example.com"
                 value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
               <p className="text-xs text-slate-dim mt-1">They must already have a VendorIQ account.</p>
             </div>
             <div>
-              <label className="label">Role</label>
-              <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              <label htmlFor="staff-role" className="label">Role</label>
+              <select id="staff-role" className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
                 <option value="CASHIER">Cashier — Record sales only</option>
                 <option value="MANAGER">Manager — All except delete store</option>
               </select>
@@ -197,6 +208,15 @@ export default function StaffPage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingRemove}
+        title={`Remove ${pendingRemove?.user.name} from this store?`}
+        confirmLabel="Remove"
+        loading={removing}
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   )
 }

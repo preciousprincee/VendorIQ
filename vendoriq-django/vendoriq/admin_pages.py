@@ -13,13 +13,16 @@ None of this touches /api/... - it's purely additive pages under /admin/,
 so it can't affect the React app or anything the mobile/desktop product
 depends on.
 """
+from datetime import timedelta
+
 from django.contrib import admin
 from django.core.cache import cache
 from django.db import connection
-from django.shortcuts import render
+from django.db.models import Count, Max, Q
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
-from apps.billing.models import Subscription, get_trial_period_days, get_pro_price_ngn
+from apps.billing.models import Subscription, get_trial_period_days, get_plan_pricing_catalog
 from apps.billing.plans import PLANS
 from .admin_dashboard import compute_subscription_metrics, _daily_series, _svg_points
 
@@ -116,15 +119,23 @@ def system_health_view(request):
         celery_status = 'off'
 
     # Config presence - never the value itself, just whether it's set
-    groq_configured = bool(getattr(settings, 'GROQ_API_KEY', ''))
+    from apps.ai.models import get_ai_config
+    ai_config = get_ai_config()
+    ai_configured = bool(ai_config['api_key']) and bool(ai_config['base_url'])
     sentry_configured = bool(getattr(settings, 'SENTRY_DSN', ''))
     email_configured = getattr(settings, 'EMAIL_BACKEND', '').endswith('smtp.EmailBackend')
+    paystack_configured = bool(getattr(settings, 'PAYSTACK_SECRET_KEY', '')) and bool(getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''))
 
     config_checks = [
         {
-            'label': 'AI assistant (Groq)', 'ok': groq_configured,
-            'sub': f'Configured \u2014 using {settings.GROQ_MODEL}' if groq_configured else 'GROQ_API_KEY not set',
-            'hint': '' if groq_configured else 'The AI Assistant page will show "AI service not configured" until this is set.',
+            'label': f"AI assistant ({ai_config['provider'].title()})", 'ok': ai_configured,
+            'sub': f"Configured \u2014 using {ai_config['model']}" if ai_configured else 'No API key set for the selected provider',
+            'hint': '' if ai_configured else 'Set the provider\'s API key in the environment, or change provider under AI > AI provider & model. The AI Assistant page will show "AI service not configured" until then.',
+        },
+        {
+            'label': 'Payments (Paystack)', 'ok': paystack_configured,
+            'sub': 'Configured' if paystack_configured else 'PAYSTACK_SECRET_KEY / PAYSTACK_PUBLIC_KEY not set',
+            'hint': '' if paystack_configured else 'Until both keys are set, customers cannot upgrade (checkout shows "Payments are not available"). The free demo upgrade only works if ALLOW_MOCK_UPGRADE=true, which should never be set in production.',
         },
         {
             'label': 'Error monitoring (Sentry)', 'ok': sentry_configured, 'optional': True,
@@ -160,30 +171,111 @@ def support_view(request):
 def settings_view(request):
     """
     Read-only view of the current Free/Pro plan configuration
-    (apps/billing/plans.py) plus the current free trial length and Pro
-    price - the same data the pricing/upgrade UI in the app itself reads,
-    so support staff can see exactly what a Free, Trial, or Pro account
-    gets without reading source code.
+    (apps/billing/plans.py) plus the current free trial length and the
+    live Monthly/6-Month/Annual pricing - the same data the pricing/
+    upgrade UI in the app itself reads, so support staff can see exactly
+    what a Free, Trial, or Pro account gets without reading source code.
 
     Plan LIMITS/features are code-driven (plans.py) and genuinely can't be
     safely changed from a form here without a redeploy - this page tells
     you what to change and where, rather than pretending to change it for
-    you. Price and trial length are the two exceptions: both are shown
+    you. Pricing and trial length are the two exceptions: both are shown
     here for visibility, but are actually edited from Django Admin under
-    Revenue & Billing (Pro plan price / Free trial length) - real DB-backed
+    Revenue & Billing (Plan prices / Free trial length) - real DB-backed
     settings that take effect immediately, no redeploy. See
-    get_pro_price_ngn() and get_trial_period_days() in
+    get_plan_pricing_catalog() and get_trial_period_days() in
     apps/billing/models.py.
     """
     from apps.billing.plans import get_plan_config
 
     context = _admin_context(request, 'Plans & Settings')
     context.update({
-        # Built via get_plan_config() per plan (not the raw PLANS dict)
-        # specifically so Pro's price_ngn here is the live value, not
-        # whatever was baked in at process startup.
+        # Built via get_plan_config() per plan - limits/features only;
+        # pricing is shown separately via get_plan_pricing_catalog() since
+        # Pro is now sold under three billing cycles, not a single price.
         'plans': {code: get_plan_config(code) for code in PLANS},
-        'pro_price': get_pro_price_ngn(),
+        'pricing_catalog': get_plan_pricing_catalog(),
         'trial_period_days': get_trial_period_days(),
     })
     return render(request, 'admin/plan_settings.html', context)
+
+
+def ai_usage_view(request):
+    """
+    AI assistant usage at a glance, plus a per-user list to drill into.
+    Replaces the old "AI usage" sidebar link, which only jumped to a small
+    summary section on the main dashboard (easy to miss, and no way to see
+    WHO is using it or what they asked). Each row links to
+    ai_user_messages_view below, which shows that user's actual
+    conversation.
+    """
+    from apps.ai.models import ChatMessage
+
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    questions = ChatMessage.objects.filter(role=ChatMessage.Role.USER)
+    active_stores_week = ChatMessage.objects.filter(created_at__gte=week_ago).values('store_id').distinct().count()
+    questions_week = questions.filter(created_at__gte=week_ago).count()
+    stats = {
+        'today': questions.filter(created_at__gte=today_start).count(),
+        'week': questions_week,
+        'month': questions.filter(created_at__gte=month_ago).count(),
+        'all_time': questions.count(),
+        'active_users_week': ChatMessage.objects.filter(created_at__gte=week_ago).values('user_id').distinct().count(),
+        'avg_per_active_store': round(questions_week / active_stores_week, 1) if active_stores_week else 0,
+    }
+
+    query = (request.GET.get('q') or '').strip()
+    rows = ChatMessage.objects.all()
+    if query:
+        rows = rows.filter(Q(user__email__icontains=query) | Q(user__name__icontains=query))
+    users = list(
+        rows.values('user_id', 'user__name', 'user__email')
+        .annotate(
+            questions=Count('id', filter=Q(role=ChatMessage.Role.USER)),
+            stores=Count('store_id', distinct=True),
+            last_active=Max('created_at'),
+        )
+        .order_by('-last_active')[:200]
+    )
+
+    context = _admin_context(request, 'AI usage')
+    context.update({'stats': stats, 'users': users, 'query': query})
+    return render(request, 'admin/ai_usage.html', context)
+
+
+def ai_user_messages_view(request, user_id):
+    """One user's AI conversation, oldest-to-newest, rendered as a chat."""
+    from apps.ai.models import ChatMessage
+    from apps.authentication.models import User
+    from apps.stores.models import Store
+
+    chat_user = get_object_or_404(User, pk=user_id)
+    stores = list(Store.objects.filter(chat_messages__user=chat_user).distinct().order_by('name'))
+
+    messages = ChatMessage.objects.filter(user=chat_user).select_related('store')
+    store_filter = (request.GET.get('store') or '').strip()
+    selected_store = next((st for st in stores if str(st.id) == store_filter), None)
+    if selected_store:
+        messages = messages.filter(store=selected_store)
+
+    limit = 300
+    total = messages.count()
+    # Newest `limit` messages, then flipped back to chronological order.
+    thread = list(messages.order_by('-created_at')[:limit])[::-1]
+
+    context = _admin_context(request, f'AI conversation \u2014 {chat_user.name}')
+    context.update({
+        'chat_user': chat_user,
+        'stores': stores,
+        'selected_store': selected_store,
+        'thread': thread,
+        'total': total,
+        'shown': len(thread),
+        'limit': limit,
+        'multiple_stores': len(stores) > 1 and not selected_store,
+    })
+    return render(request, 'admin/ai_user_messages.html', context)

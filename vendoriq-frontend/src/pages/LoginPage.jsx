@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BarChart3, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { getErrorMessage } from '../lib/utils'
 import toast from 'react-hot-toast'
@@ -44,8 +44,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm animate-fade-in">
         {/* Logo */}
         <div className="flex items-center gap-3 justify-center mb-10">
-          <div className="w-10 h-10 bg-saffron-500 rounded-xl flex items-center justify-center">
-            <BarChart3 size={20} className="text-white" />
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
+            <img src="/icons/logo.png" alt="VendorIQ" className="w-full h-full object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-text leading-none">VendorIQ</h1>
@@ -69,8 +69,9 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="label">Email</label>
+              <label htmlFor="login-email" className="label">Email</label>
               <input
+                id="login-email"
                 type="email"
                 className="input"
                 placeholder="you@example.com"
@@ -82,9 +83,10 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label htmlFor="login-password" className="label">Password</label>
               <div className="relative">
                 <input
+                  id="login-password"
                   type={showPw ? 'text' : 'password'}
                   className="input pr-10"
                   placeholder="••••••••"
@@ -96,6 +98,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-dim hover:text-slate-muted"
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}

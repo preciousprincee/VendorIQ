@@ -3,6 +3,7 @@ from rest_framework import status
 from django.db import transaction
 from django.db.models import Sum, F, Q, Count, DecimalField
 from django.db.models.deletion import ProtectedError
+from . import deletion
 from .models import Product
 from .serializers import ProductSerializer
 from apps.stores.models import Store
@@ -60,7 +61,7 @@ class ProductListCreateView(StoreScopedAPIView):
         # narrows results anyway, so this only bites the unfiltered view.
         PRODUCT_LIST_CAP = 500
         truncated = agg['total'] > PRODUCT_LIST_CAP
-        serializer = ProductSerializer(products[:PRODUCT_LIST_CAP], many=True)
+        serializer = ProductSerializer(products[:PRODUCT_LIST_CAP], many=True, context={'role': role})
         return Response({
             'products': serializer.data,
             'summary': summary,
@@ -68,7 +69,7 @@ class ProductListCreateView(StoreScopedAPIView):
         })
 
     def post(self, request, store_id):
-        serializer = ProductSerializer(data=request.data)
+        serializer = ProductSerializer(data=request.data, context={'role': self.role})
         if not serializer.is_valid():
             return Response({'error': next(iter(serializer.errors.values()))[0]}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
@@ -83,7 +84,7 @@ class ProductListCreateView(StoreScopedAPIView):
             check_can_add_product(self.store)
             product = serializer.save(store=self.store)
         invalidate_store_insights(store_id)
-        return Response({'product': ProductSerializer(product).data}, status=status.HTTP_201_CREATED)
+        return Response({'product': ProductSerializer(product, context={'role': self.role}).data}, status=status.HTTP_201_CREATED)
 
 
 class ProductDetailView(StoreScopedAPIView):
@@ -99,13 +100,17 @@ class ProductDetailView(StoreScopedAPIView):
         product = self.get_product(product_id)
         if not product:
             return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'product': ProductSerializer(product).data})
+        return Response({'product': ProductSerializer(product, context={'role': self.role}).data})
 
     def patch(self, request, store_id, product_id):
         product = self.get_product(product_id)
         if not product:
             return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ProductSerializer(product, data=request.data, partial=True)
+        # A cashier rings up sales - they don't get to re-price the catalogue
+        # or rewrite the cost the profit figures are computed from.
+        if self.role == 'CASHIER' and ('cost_price' in request.data or 'selling_price' in request.data):
+            return Response({'error': 'You do not have permission to change prices.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ProductSerializer(product, data=request.data, partial=True, context={'role': self.role})
         if serializer.is_valid():
             serializer.save()
             invalidate_store_insights(store_id)
@@ -118,7 +123,7 @@ class ProductDetailView(StoreScopedAPIView):
         if not product:
             return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            product.delete()
+            deletion.delete_directly(product, request.user)
         except ProtectedError:
             # SaleItem.product and InvoiceItem.product are on_delete=PROTECT
             # (financial records shouldn't silently disappear or point at
@@ -141,23 +146,28 @@ class ProductBarcodeView(StoreScopedAPIView):
         barcode = request.query_params.get('barcode')
         if not barcode:
             return Response({'error': 'Barcode is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            product = Product.objects.get(store=self.store, barcode=barcode)
-            return Response({'product': ProductSerializer(product).data})
-        except Product.DoesNotExist:
+        # Barcodes aren't unique per store, so .get() raised
+        # MultipleObjectsReturned (a 500 at the till) for a duplicate.
+        product = Product.objects.filter(store=self.store, barcode=barcode).order_by('created_at').first()
+        if product is None:
             return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'product': ProductSerializer(product, context={'role': self.role}).data})
 
 
 class ProductRestockView(StoreScopedAPIView):
     def patch(self, request, store_id, product_id):
-        try:
-            product = Product.objects.get(id=product_id, store=self.store)
-        except Product.DoesNotExist:
-            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
         qty = request.data.get('quantity', 0)
-        if not isinstance(qty, int) or qty <= 0:
+        # bool is a subclass of int: `true` would restock 1 unit.
+        if not isinstance(qty, int) or isinstance(qty, bool) or qty <= 0 or qty > 1_000_000:
             return Response({'error': 'Quantity must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
-        product.quantity += qty
-        product.save()
+        with transaction.atomic():
+            # Lock the row: a plain read-modify-write here lost updates when
+            # a sale (which locks) landed between the read and the save.
+            try:
+                product = Product.objects.select_for_update().get(id=product_id, store=self.store)
+            except Product.DoesNotExist:
+                return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+            product.quantity += qty
+            product.save(update_fields=['quantity', 'updated_at'])
         invalidate_store_insights(store_id)
-        return Response({'product': ProductSerializer(product).data})
+        return Response({'product': ProductSerializer(product, context={'role': self.role}).data})

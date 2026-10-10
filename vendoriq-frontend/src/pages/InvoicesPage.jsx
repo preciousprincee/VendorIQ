@@ -54,6 +54,17 @@ export default function InvoicesPage() {
   const [sending, setSending] = useState(false)
   const [sendModalInvoice, setSendModalInvoice] = useState(null)
   const [emailPromptInvoice, setEmailPromptInvoice] = useState(null)
+
+  useEffect(() => {
+    if (!sendModalInvoice && !emailPromptInvoice) return
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return
+      if (emailPromptInvoice) setEmailPromptInvoice(null)
+      else setSendModalInvoice(null)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [sendModalInvoice, emailPromptInvoice])
   const [emailInput, setEmailInput] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [pendingDeleteInvoice, setPendingDeleteInvoice] = useState(null)
@@ -299,19 +310,19 @@ export default function InvoicesPage() {
         <div className="card p-4 space-y-3">
           <p className="text-xs font-semibold text-slate-muted uppercase tracking-wider">Customer details</p>
           <div>
-            <label className="label">Customer name</label>
-            <input className="input" placeholder="e.g. Ade Supermarket" value={form.customerName}
+            <label htmlFor="inv-customer-name" className="label">Customer name</label>
+            <input id="inv-customer-name" className="input" placeholder="e.g. Ade Supermarket" value={form.customerName}
               onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} required />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Email <span className="text-slate-dim normal-case">(optional)</span></label>
-              <input type="email" className="input" placeholder="ade@example.com" value={form.customerEmail}
+              <label htmlFor="inv-customer-email" className="label">Email <span className="text-slate-dim normal-case">(optional)</span></label>
+              <input id="inv-customer-email" type="email" className="input" placeholder="ade@example.com" value={form.customerEmail}
                 onChange={e => setForm(f => ({ ...f, customerEmail: e.target.value }))} />
             </div>
             <div>
-              <label className="label">Phone <span className="text-slate-dim normal-case">(optional)</span></label>
-              <input type="tel" className="input" placeholder="+234..." value={form.customerPhone}
+              <label htmlFor="inv-customer-phone" className="label">Phone <span className="text-slate-dim normal-case">(optional)</span></label>
+              <input id="inv-customer-phone" type="tel" className="input" placeholder="+234..." value={form.customerPhone}
                 onChange={e => setForm(f => ({ ...f, customerPhone: e.target.value }))} />
             </div>
           </div>
@@ -433,10 +444,10 @@ export default function InvoicesPage() {
 
       {sendModalInvoice && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => setSendModalInvoice(null)}>
-          <div className="card w-full sm:max-w-sm p-5 rounded-b-none sm:rounded-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="send-invoice-modal-title" className="card w-full sm:max-w-sm p-5 rounded-b-none sm:rounded-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-slate-text">Send invoice to {sendModalInvoice.customer_name}</h3>
-              <button onClick={() => setSendModalInvoice(null)} className="text-slate-dim hover:text-slate-text"><X size={18} /></button>
+              <h3 id="send-invoice-modal-title" className="text-sm font-semibold text-slate-text">Send invoice to {sendModalInvoice.customer_name}</h3>
+              <button onClick={() => setSendModalInvoice(null)} aria-label="Close" className="text-slate-dim hover:text-slate-text"><X size={18} /></button>
             </div>
             <div className="space-y-1">
               <button onClick={() => handleSendEmail(sendModalInvoice)} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-navy-700/50 transition-colors text-left">
@@ -493,12 +504,13 @@ export default function InvoicesPage() {
 
       {emailPromptInvoice && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => setEmailPromptInvoice(null)}>
-          <div className="card w-full sm:max-w-sm p-5 rounded-b-none sm:rounded-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-slate-text mb-1">No email on file</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="email-prompt-modal-title" className="card w-full sm:max-w-sm p-5 rounded-b-none sm:rounded-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
+            <h3 id="email-prompt-modal-title" className="text-sm font-semibold text-slate-text mb-1">No email on file</h3>
             <p className="text-xs text-slate-dim mb-4">Enter an email address to send this invoice to.</p>
             <input
               type="email"
               autoFocus
+              aria-label="Customer email address"
               className="input mb-4"
               placeholder="customer@example.com"
               value={emailInput}
@@ -520,7 +532,7 @@ export default function InvoicesPage() {
     <div className="p-5 lg:p-6 animate-fade-in">
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-bold text-slate-text">Invoices</h1>
-        <button onClick={openNew} className="w-9 h-9 rounded-full bg-brand-500 text-white flex items-center justify-center hover:bg-brand-600 transition-colors flex-shrink-0">
+        <button onClick={openNew} aria-label="Create new invoice" className="w-9 h-9 rounded-full bg-brand-500 text-white flex items-center justify-center hover:bg-brand-600 transition-colors flex-shrink-0">
           <Plus size={18} />
         </button>
       </div>

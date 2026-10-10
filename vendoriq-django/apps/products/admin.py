@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db.models import Sum, F
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import Product
+from .models import Product, ProductDeletionRequest
 
 
 @admin.register(Product)
@@ -25,7 +25,7 @@ class ProductAdmin(ModelAdmin):
         # to mistype/forget) - explicit and unambiguous instead.
         from apps.sales.models import SaleItem
         agg = SaleItem.objects.filter(product=obj).aggregate(
-            units_sold=Sum('quantity'),
+            units_sold=Sum(F('quantity') - F('returned_quantity')),
             revenue=Sum(F('unit_price') * F('quantity')),
             profit=Sum('profit'),
         )
@@ -42,3 +42,15 @@ class ProductAdmin(ModelAdmin):
             '</div>',
             units_sold, f'{revenue:,.0f}', f'{profit:,.0f}', f'{avg_price:,.0f}',
         )
+
+
+@admin.register(ProductDeletionRequest)
+class ProductDeletionRequestAdmin(ModelAdmin):
+    """Audit trail of cashier requests to delete products: who asked, why, who decided."""
+    list_display = ['created_at', 'store', 'product_name', 'requested_by', 'status', 'decided_by', 'decided_at']
+    list_filter = ['status', 'store']
+    search_fields = ['product_name', 'remark', 'requested_by__email']
+    readonly_fields = ['store', 'product', 'product_name', 'requested_by', 'remark', 'status', 'decided_by', 'decided_at', 'decision_note', 'created_at']
+
+    def has_add_permission(self, request):
+        return False

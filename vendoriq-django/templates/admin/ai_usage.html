@@ -1,0 +1,74 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+.viq-search { display: flex; gap: 8px; margin-bottom: 14px; }
+.viq-search input { flex: 1; max-width: 360px; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; background: #fff; color: #111827; }
+html.dark .viq-search input { background: #18181b; border-color: #3f3f46; color: #f4f4f5; }
+.viq-search button { padding: 8px 14px; border-radius: 8px; border: none; background: #1e8449; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <div class="viq-section">
+    <p class="viq-section-title">AI assistant usage</p>
+    <div class="viq-grid viq-grid-3">
+      <div class="viq-card"><p class="viq-label">Questions asked today</p><p class="viq-value">{{ stats.today }}</p></div>
+      <div class="viq-card"><p class="viq-label">Questions (7 days)</p><p class="viq-value">{{ stats.week }}</p></div>
+      <div class="viq-card"><p class="viq-label">Questions (30 days)</p><p class="viq-value">{{ stats.month }}</p></div>
+      <div class="viq-card"><p class="viq-label">Questions (all time)</p><p class="viq-value">{{ stats.all_time }}</p></div>
+      <div class="viq-card"><p class="viq-label">Active users (7 days)</p><p class="viq-value">{{ stats.active_users_week }}</p></div>
+      <div class="viq-card"><p class="viq-label">Avg questions per active store (7d)</p><p class="viq-value">{{ stats.avg_per_active_store }}</p></div>
+    </div>
+  </div>
+
+  <div class="viq-section">
+    <p class="viq-section-title">Users &amp; conversations</p>
+    <form method="get" class="viq-search">
+      <input type="text" name="q" value="{{ query }}" placeholder="Search by name or email">
+      <button type="submit">Search</button>
+    </form>
+    <div class="viq-panel">
+      {% if users %}
+      <table class="viq-table">
+        <thead>
+          <tr><th>User</th><th>Questions asked</th><th>Stores</th><th>Last active</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td data-label="User">
+              <a href="{% url 'admin_ai_user_messages' u.user_id %}">{{ u.user__name }}</a>
+              <div class="viq-panel-row-sub">{{ u.user__email }}</div>
+            </td>
+            <td data-label="Questions asked">{{ u.questions }}</td>
+            <td data-label="Stores">{{ u.stores }}</td>
+            <td data-label="Last active">{{ u.last_active|date:"M j, Y, g:i A" }}</td>
+            <td><a href="{% url 'admin_ai_user_messages' u.user_id %}" class="viq-pill">View messages</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="viq-panel-empty">{% if query %}No AI conversations match "{{ query }}".{% else %}Nobody has used the AI assistant yet.{% endif %}</p>
+      {% endif %}
+    </div>
+    <p class="viq-hint" style="margin-top:12px;margin-bottom:0;">
+      Open a user to read their full conversation. Change which provider/model powers the assistant under
+      <a href="{% url 'admin:ai_aisettings_changelist' %}" class="viq-pill">AI &rsaquo; AI provider &amp; model</a>.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

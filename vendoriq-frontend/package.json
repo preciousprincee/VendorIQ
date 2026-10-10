@@ -18,7 +18,8 @@
     "lucide-react": "^0.475.0",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
-    "@sentry/react": "^10.0.0"
+    "@sentry/react": "^10.0.0",
+    "posthog-js": "^1.200.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

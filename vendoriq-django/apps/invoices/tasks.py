@@ -1,6 +1,7 @@
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
@@ -40,8 +41,12 @@ def send_invoice_email_task(invoice_id, recipient, store_name):
         'items': items,
         'store_name': store_name,
         'currency_symbol': '₦',
+        'logo_url': f'{settings.FRONTEND_URL}/icons/logo.png' if settings.FRONTEND_URL else '',
     })
 
+    # Store names are user-controlled: a newline in the subject makes Django
+    # raise BadHeaderError, failing every send for that store.
+    store_name = ' '.join(str(store_name).split())
     email = EmailMultiAlternatives(
         subject=f'Invoice from {store_name}',
         body=f'Your invoice from {store_name} - total {invoice.total_amount}. View in HTML for full details.',

@@ -3,6 +3,7 @@ import api from '../lib/api'
 import { useAuth } from './AuthContext'
 import { useStore } from './StoreContext'
 import UpgradeModal from '../components/billing/UpgradeModal'
+import { track } from '../lib/analytics'
 
 const SubscriptionContext = createContext(null)
 
@@ -68,12 +69,21 @@ export function SubscriptionProvider({ children }) {
   useEffect(() => { refresh() }, [refresh])
 
   useEffect(() => {
-    const handler = (e) => setModalContext(e.detail || {})
+    const handler = (e) => {
+      const detail = e.detail || {}
+      // The server refused a Pro-only action (402): that is a feature-gate hit.
+      if (detail.feature) track('feature_gate_hit', { feature: detail.feature, source: 'api' })
+      setModalContext(detail)
+    }
     window.addEventListener('viq:upgrade-required', handler)
     return () => window.removeEventListener('viq:upgrade-required', handler)
   }, [])
 
-  const openUpgradeModal = useCallback((context = {}) => setModalContext(context), [])
+  const openUpgradeModal = useCallback((context = {}) => {
+    // Only a locked FEATURE counts as a gate hit - a plain "Upgrade" button click carries no feature.
+    if (context?.feature) track('feature_gate_hit', { feature: context.feature, source: 'ui' })
+    setModalContext(context)
+  }, [])
   const closeUpgradeModal = useCallback(() => setModalContext(null), [])
 
   const plan = subscription?.plan || 'FREE'
@@ -95,6 +105,12 @@ export function SubscriptionProvider({ children }) {
     usage: subscription?.usage,
     limits: subscription?.planConfig?.limits,
     plansCatalog: subscription?.plans,
+    // The live Monthly / 6-Month / Annual price catalog (see
+    // apps/billing/models.py::get_plan_pricing_catalog) - always present,
+    // even on Free, so the pricing/upgrade UI never has to guess prices.
+    pricing: subscription?.pricing ?? [],
+    billingCycle: subscription?.billingCycle ?? null,
+    amountPaidNgn: subscription?.amountPaidNgn ?? 0,
     // Trial state - isTrialActive drives the "N days left in your trial"
     // banner; hasUsedTrial/trialPeriodDays drive whether and how a
     // "start your free trial" CTA is offered to a Free account (see

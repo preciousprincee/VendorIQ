@@ -26,22 +26,29 @@
   </p>
 
   <div class="viq-section">
-    <p class="viq-section-title">Pro plan price</p>
+    <p class="viq-section-title">Pro plan pricing</p>
     <div class="viq-grid viq-grid-4">
+      {% for cycle in pricing_catalog %}
       <div class="viq-card">
-        <p class="viq-label">Current price</p>
-        <p class="viq-value">₦{{ pro_price|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+        <p class="viq-label">{{ cycle.label }}{% if cycle.mostPopular %} &middot; Most popular{% endif %}{% if cycle.bestValue %} &middot; Best value{% endif %}</p>
+        <p class="viq-value">₦{{ cycle.priceNgn|floatformat:0 }}</p>
+        <p class="viq-hint" style="margin:2px 0 0;">₦{{ cycle.monthlyEquivalentNgn|floatformat:0 }}/mo equivalent</p>
       </div>
+      {% endfor %}
     </div>
     <p class="viq-hint" style="margin-top:10px;margin-bottom:0;">
-      This is a live setting, not a code/environment value - change it from
-      <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Billing &rsaquo; Pro plan price</a>
-      and it takes effect immediately for every <strong>new</strong> upgrade (Subscription page, upgrade modal, this
-      page all show the new price right away). It does <strong>not</strong> retroactively change what someone
-      already paying is charged - each subscriber locks in the price shown at the moment they upgrade (see
-      <code>Subscription.price_ngn</code> in <code>apps/billing/models.py</code>), so MRR on the
+      These are live, database-backed settings, not code/environment values - change any of them from
+      <a href="{% url 'admin:billing_planprice_changelist' %}" class="viq-pill">Billing &rsaquo; Plan prices</a> by
+      opening the cycle you want to change and editing its price directly (or use "Add plan price" to record a
+      dated new version instead, if you'd rather keep an explicit change log). Either way it takes effect
+      immediately for every <strong>new</strong> purchase (pricing page, checkout, this page all show the new price
+      right away). It does <strong>not</strong> retroactively change what someone already paying is charged - each
+      subscriber locks in the price at the moment they purchase/renew (see <code>Subscription.price_ngn</code> and
+      <code>SubscriptionPurchase</code> in <code>apps/billing/models.py</code>), so MRR on the
       <a href="{% url 'admin_revenue' %}" class="viq-pill">Revenue page</a> reflects what people actually agreed to
-      pay, not subscriber count &times; today's price.
+      pay, not subscriber count &times; today's price. Every historical purchase remains untouched regardless of
+      later price changes - see
+      <a href="{% url 'admin:billing_subscriptionpurchase_changelist' %}" class="viq-pill">Subscription purchases</a>.
     </p>
   </div>
 
@@ -70,7 +77,7 @@
     <div class="viq-grid viq-grid-4">
       <div class="viq-card">
         <p class="viq-label">Price</p>
-        <p class="viq-value">₦{{ plan.price_ngn|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+        <p class="viq-value">{% if code == 'FREE' %}₦0{% else %}See pricing above{% endif %}</p>
       </div>
       <div class="viq-card">
         <p class="viq-label">Max stores</p>

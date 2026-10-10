@@ -18,11 +18,12 @@
 <div class="px-4 sm:px-6 lg:px-8">
 
   <p class="viq-hint">
-    Platform-wide subscription revenue. MRR is the sum of what each currently-paying subscriber actually locked in
-    at the time they upgraded (see the "Price locked in" column below) - not subscriber count &times; today's price,
-    so a change to <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Pro plan price</a>
-    only affects future upgrades. There's no payment ledger yet (the upgrade flow is mocked until a real gateway is
-    connected), so this reflects the current snapshot, not historical totals.
+    Platform-wide subscription revenue. MRR normalizes what each currently-paying subscriber actually locked in
+    at the time they purchased/renewed (see the "Price locked in" column below) down to a monthly-equivalent before
+    summing - never subscriber count &times; today's price, and never a raw sum across different billing cycles - so
+    a change to <a href="{% url 'admin:billing_planprice_changelist' %}" class="viq-pill">Plan prices</a> only
+    affects future purchases. The full, itemized, immutable payment history is in
+    <a href="{% url 'admin:billing_subscriptionpurchase_changelist' %}" class="viq-pill">Billing &rsaquo; Subscription purchases</a>.
   </p>
 
   <div class="viq-section">
@@ -37,8 +38,9 @@
         <p class="viq-value">₦{{ subscriptions.arr|floatformat:0 }}</p>
       </div>
       <div class="viq-card">
-        <p class="viq-label">Price per Pro subscription</p>
+        <p class="viq-label">Monthly plan price</p>
         <p class="viq-value">₦{{ subscriptions.pro_price|floatformat:0 }}<span style="font-size:12px;color:#9ca3af;">/mo</span></p>
+        <p class="viq-hint" style="margin:2px 0 0;">See <a href="{% url 'admin_plan_settings' %}" class="viq-pill">Plans &amp; Settings</a> for 6-Month/Annual</p>
       </div>
       <div class="viq-card">
         <p class="viq-label">Free &rarr; Pro conversion</p>
@@ -107,8 +109,9 @@
               <div class="viq-panel-row-sub">{{ s.user.email }}</div>
             </td>
             <td data-label="Type">{% if s.is_complimentary %}Complimentary{% else %}Paying{% endif %}</td>
+            <td data-label="Billing cycle">{% if s.is_complimentary %}&mdash;{% else %}{{ s.get_billing_cycle_display|default:"—" }}{% endif %}</td>
             <td data-label="Price locked in">
-              {% if s.is_complimentary %}&mdash;{% else %}₦{{ s.price_ngn|floatformat:0 }}/mo{% endif %}
+              {% if s.is_complimentary %}&mdash;{% else %}₦{{ s.price_ngn|floatformat:0 }}{% endif %}
             </td>
             <td data-label="Since">{{ s.current_period_start|date:"M j, Y"|default:"—" }}</td>
             <td data-label="Renews">{% if s.is_complimentary %}Doesn't expire{% else %}{{ s.current_period_end|date:"M j, Y"|default:"—" }}{% endif %}</td>
@@ -121,12 +124,14 @@
       {% endif %}
     </div>
     <p class="viq-hint" style="margin-top:12px;margin-bottom:0;">
-      MRR above is the sum of what each paying subscriber actually locked in (the "Price locked in" column here),
-      not a simple count &times; today's price - so changing
-      <a href="{% url 'admin:billing_pricingsettings_changelist' %}" class="viq-pill">Revenue &amp; Billing &rsaquo; Pro plan price</a>
-      only affects new upgrades going forward, never retroactively "charges" someone who's already subscribed more
+      MRR above normalizes what each paying subscriber actually locked in (the "Price locked in" column here) to
+      a monthly-equivalent, never a simple count &times; today's price - so changing
+      <a href="{% url 'admin:billing_planprice_changelist' %}" class="viq-pill">Revenue &amp; Billing &rsaquo; Plan prices</a>
+      only affects new purchases going forward, never retroactively "charges" someone who's already subscribed more
       than they agreed to. Manage individual subscriptions (including granting free Pro access) from
-      <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>.
+      <a href="{% url 'admin:billing_subscription_changelist' %}" class="viq-pill">Billing &rsaquo; Subscriptions</a>,
+      or see every historical payment in
+      <a href="{% url 'admin:billing_subscriptionpurchase_changelist' %}" class="viq-pill">Billing &rsaquo; Subscription purchases</a>.
     </p>
   </div>
 

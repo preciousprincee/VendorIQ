@@ -29,8 +29,8 @@ from apps.sales.models import Sale, SaleItem
 from apps.expenses.models import Expense
 from apps.invoices.models import Invoice
 from apps.ai.models import ChatMessage
-from apps.billing.models import Subscription, SubscriptionStatus, get_pro_price_ngn
-from apps.billing.plans import PRO, FREE
+from apps.billing.models import Subscription, SubscriptionStatus, get_plan_pricing_catalog
+from apps.billing.plans import PRO, FREE, BILLING_CYCLE_MONTHS, MONTHLY
 
 
 def _daily_series(queryset, date_field, days, value_expr=None):
@@ -117,23 +117,34 @@ def compute_subscription_metrics(recent_limit=6):
     # for an active trial (it grants real Pro access) but nobody has paid
     # for it, so it must never count toward MRR/paying counts or it would
     # overstate real revenue the moment trials exist.
-    paying_pro_subs = [s for s in all_subs if s.is_pro_active and not s.is_complimentary and s.status != SubscriptionStatus.TRIAL]
+    # provider='mock' is the dev-only demo upgrade: it sets a real price_ngn
+    # but no money changed hands, so counting it inflated MRR/ARR and the
+    # paying-customer count.
+    paying_pro_subs = [
+        s for s in all_subs
+        if s.is_pro_active and not s.is_complimentary and s.status != SubscriptionStatus.TRIAL and s.provider != 'mock'
+    ]
     comp_pro_subs = [s for s in all_subs if s.is_pro_active and s.is_complimentary]
     trialing_subs = [s for s in all_subs if s.is_pro_active and s.status == SubscriptionStatus.TRIAL]
     cancelling_subs = [s for s in all_subs if s.is_pro_active and s.cancel_at_period_end]
     lapsed_subs = [s for s in all_subs if not s.is_pro_active and s.plan == PRO]
     free_subs = [s for s in all_subs if not s.is_pro_active and s.plan == FREE]
 
-    pro_price = get_pro_price_ngn()
-    # MRR is the SUM of what paying subscribers actually locked in
-    # (price_ngn, set at the moment each of them upgraded - see
-    # UpgradeView), NOT count * today's price. Those are only the same
-    # number when nobody has ever changed PricingSettings. The moment an
-    # admin changes the Pro price, count * current_price would retroactively
-    # "charge" existing subscribers a price they never agreed to and never
-    # paid - summing each subscriber's own locked-in price is what keeps
-    # this honest across a price change.
-    mrr = sum(s.price_ngn for s in paying_pro_subs)
+    pricing_catalog = get_plan_pricing_catalog()
+    # 'pro_price' kept as the headline "starting from" figure shown in
+    # older templates (index.html/revenue.html) - the Monthly cycle price,
+    # since that's the lowest entry price a new signup sees. The full
+    # three-cycle breakdown is in 'pricing_catalog' for pages that show it.
+    pro_price = next((p['priceNgn'] for p in pricing_catalog if p['billingCycle'] == MONTHLY), 0)
+    # MRR normalizes EVERY paying subscriber's locked-in purchase price
+    # (price_ngn - the full amount they paid for their WHOLE billing
+    # cycle, e.g. \u20a624,000 for an annual plan) down to a monthly-equivalent
+    # before summing - summing price_ngn directly would wildly overstate
+    # MRR for anyone on the 6-month/annual cycle, since price_ngn is not a
+    # monthly figure for those. Never count * today's price (see the
+    # per-subscriber comment above) AND never sum raw locked-in prices
+    # across different billing cycles - both would misreport revenue.
+    mrr = sum(s.price_ngn // BILLING_CYCLE_MONTHS.get(s.billing_cycle, 1) for s in paying_pro_subs)
     tracked_accounts = len(all_subs)
     return {
         'tracked_accounts': tracked_accounts,
@@ -146,6 +157,7 @@ def compute_subscription_metrics(recent_limit=6):
         'mrr': mrr,
         'arr': mrr * 12,
         'pro_price': pro_price,
+        'pricing_catalog': pricing_catalog,
         'conversion_rate': round(len(paying_pro_subs) / tracked_accounts * 100, 1) if tracked_accounts else 0,
         'recent_pro': sorted(
             [s for s in (paying_pro_subs + comp_pro_subs)],
@@ -253,7 +265,7 @@ def dashboard_callback(request, context):
     top_products = list(
         SaleItem.objects.filter(sale__created_at__gte=month_ago)
         .values('product__name')
-        .annotate(units=Sum('quantity'))
+        .annotate(units=Sum(F('quantity') - F('returned_quantity')))
         .order_by('-units')[:5]
     )
     most_active_staff = list(

@@ -1,6 +1,6 @@
 import { Link, Navigate } from 'react-router-dom'
-import { BarChart3 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import BusinessFooter from '../components/legal/BusinessFooter'
 
 function HeroIllustration() {
   // A lightweight, self-contained illustration (no image assets) echoing the
@@ -35,8 +35,8 @@ export default function WelcomePage() {
     <div className="min-h-screen bg-navy-950 flex flex-col justify-between px-6 py-10">
       <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full text-center">
         <div className="flex items-center gap-2.5 justify-center mb-10">
-          <div className="w-9 h-9 bg-brand-500 rounded-xl flex items-center justify-center">
-            <BarChart3 size={18} className="text-white" />
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
+            <img src="/icons/logo.png" alt="VendorIQ" className="w-full h-full object-contain" />
           </div>
           <span className="text-xl font-bold text-slate-text tracking-tight">VendorIQ</span>
         </div>
@@ -59,6 +59,7 @@ export default function WelcomePage() {
           <span className="w-1.5 h-1.5 rounded-full bg-navy-700" />
           <span className="w-1.5 h-1.5 rounded-full bg-navy-700" />
         </div>
+        <BusinessFooter />
       </div>
     </div>
   )

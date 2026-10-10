@@ -1,4 +1,5 @@
 from rest_framework.response import Response
+from rest_framework import status
 from django.db.models import Sum, Count, F, DecimalField
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -52,7 +53,15 @@ class DashboardView(StoreScopedAPIView):
         # actually doing.
         prev_month_start = (month_start - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         days_elapsed_this_month = (now - month_start).days
-        prev_month_to_date_end = prev_month_start + timedelta(days=days_elapsed_this_month, hours=local_now.hour, minutes=local_now.minute, seconds=local_now.second)
+        # Never let the comparison window run past the end of the previous
+        # month: on the 30th/31st, "1st + 30 days" of a 28-30 day month
+        # lands INSIDE the current month, so this month's own early sales
+        # were being counted as "last month" (and last month's growth %
+        # understated). Cap at the boundary (== month_start).
+        prev_month_to_date_end = min(
+            prev_month_start + timedelta(days=days_elapsed_this_month, hours=local_now.hour, minutes=local_now.minute, seconds=local_now.second),
+            month_start,
+        )
 
         def period_summary(sales_start, sales_end, expenses_start_date, expenses_end_date):
             sales_qs = Sale.objects.filter(store=store, created_at__gte=sales_start)
@@ -101,7 +110,7 @@ class DashboardView(StoreScopedAPIView):
             sale__store=store,
             sale__created_at__gte=month_start
         ).values('product__id', 'product__name').annotate(
-            total_sold=Sum('quantity')
+            total_sold=Sum(F('quantity') - F('returned_quantity'))
         ).order_by('-total_sold')[:5]
 
         best_sellers_data = [{
@@ -140,7 +149,11 @@ class TrendView(StoreScopedAPIView):
 
     def get(self, request, store_id):
         store = self.store
-        requested_days = int(request.query_params.get('days', 30))
+        try:
+            requested_days = int(request.query_params.get('days', 30))
+        except (TypeError, ValueError):
+            return Response({'error': 'days must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+        requested_days = max(1, min(requested_days, 366))
         days = clamp_trend_days(store.owner, requested_days)
 
         cache_key = trend_key(store_id, days)
@@ -148,8 +161,14 @@ class TrendView(StoreScopedAPIView):
         if cached is not None:
             return Response(cached)
 
-        now = timezone.now()
-        start_date = now - timedelta(days=days)
+        # Work in the store's LOCAL calendar (Africa/Lagos), not UTC dates.
+        # TruncDate below buckets sales by local day, but the loop used to
+        # walk UTC dates - so for the first hour after Lagos midnight
+        # "today" (a Lagos date) was one day ahead of the loop's end and
+        # today's sales silently dropped off the chart.
+        now = timezone.localtime(timezone.now())
+        start_day = now.date() - timedelta(days=days)
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days)
 
         # Group by day in the database instead of pulling every sale row into
         # Python and summing them by hand - identical result, far less data
@@ -163,7 +182,7 @@ class TrendView(StoreScopedAPIView):
         by_day = {row['day']: row for row in sales_rows}
 
         expense_rows = (
-            Expense.objects.filter(store=store, incurred_on__gte=start_date.date())
+            Expense.objects.filter(store=store, incurred_on__gte=start_day)
             .values('incurred_on')
             .annotate(total=Sum('amount'))
         )
@@ -174,7 +193,7 @@ class TrendView(StoreScopedAPIView):
         # entirely instead of showing as a real dip, and the line's x-axis
         # spacing gets thrown off by the gap.
         trend = []
-        cursor = start_date.date()
+        cursor = start_day
         today = now.date()
         while cursor <= today:
             row = by_day.get(cursor)
@@ -205,59 +224,85 @@ class TrendView(StoreScopedAPIView):
         return Response(payload)
 
 
+def compute_store_alerts(store):
+    """
+    Out-of-stock/low-stock products and long-unpaid invoices for one store,
+    computed on the fly (cached briefly) rather than stored. Shared by the
+    store-scoped NotificationsView below and the account-level bell
+    (apps/notifications/views.py), which merges these with the user's own
+    reminders and admin announcements.
+    """
+    store_id = store.id
+    cache_key = notifications_key(store_id)
+    cached = safe_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    notifications = []
+
+    out_of_stock = Product.objects.filter(store=store, quantity=0)
+    for p in out_of_stock[:10]:
+        notifications.append({
+            'id': f'out-of-stock-{p.id}',
+            'type': 'out_of_stock',
+            'severity': 'high',
+            'message': f'{p.name} is out of stock',
+            'link': '/products',
+            'createdAt': p.updated_at,
+        })
+
+    low_stock = Product.objects.filter(store=store, quantity__gt=0, quantity__lte=F('low_stock_threshold'))
+    for p in low_stock[:10]:
+        notifications.append({
+            'id': f'low-stock-{p.id}',
+            'type': 'low_stock',
+            'severity': 'medium',
+            'message': f'{p.name} is running low ({p.quantity} left)',
+            'link': '/products',
+            'createdAt': p.updated_at,
+        })
+
+    stale_cutoff = timezone.now() - timedelta(days=14)
+    stale_invoices = Invoice.objects.filter(store=store, status='SENT', created_at__lte=stale_cutoff)
+    for inv in stale_invoices[:10]:
+        days_out = (timezone.now() - inv.created_at).days
+        notifications.append({
+            'id': f'stale-invoice-{inv.id}',
+            'type': 'stale_invoice',
+            'severity': 'medium',
+            'message': f'Invoice for {inv.customer_name} has been unpaid for {days_out} days',
+            'link': '/invoices',
+            # The moment it BECAME overdue, not when it was written: the bell
+            # decides "unread" by comparing this with when the person last
+            # opened it, so using created_at (always >14 days old) meant a
+            # newly overdue invoice could never light the badge.
+            'createdAt': inv.created_at + timedelta(days=14),
+        })
+
+    # Sales that arrived from an offline till with something to double-check
+    # (stock ran out, price changed, discount over a cashier's limit...).
+    flagged = Sale.objects.filter(store=store, needs_review=True)
+    flagged_count = flagged.count()
+    if flagged_count:
+        latest = flagged.order_by('-synced_at', '-created_at').values_list('synced_at', 'created_at').first()
+        notifications.append({
+            'id': 'sales-needing-review',
+            'type': 'sales_review',
+            'severity': 'medium',
+            'message': f'{flagged_count} sale{"s" if flagged_count != 1 else ""} recorded offline need{"" if flagged_count != 1 else "s"} your review',
+            'link': '/sales',
+            'createdAt': latest[0] or latest[1],
+        })
+
+    notifications.sort(key=lambda n: n['createdAt'], reverse=True)
+    payload = {'notifications': notifications, 'count': len(notifications)}
+    safe_cache_set(cache_key, payload, NOTIFICATIONS_TTL)
+    return payload
+
+
 class NotificationsView(StoreScopedAPIView):
-    """
-    Computed on the fly from existing data rather than a stored notification
-    log - out-of-stock/low-stock products and invoices that have sat unpaid
-    for a while are the "important" alerts an owner/manager needs to act on.
-    """
+    """Store alerts only (kept for API compatibility) - the bell now uses /api/notifications/."""
     allowed_roles = FINANCIAL_ROLES
 
     def get(self, request, store_id):
-        store = self.store
-        cache_key = notifications_key(store_id)
-        cached = safe_cache_get(cache_key)
-        if cached is not None:
-            return Response(cached)
-
-        notifications = []
-
-        out_of_stock = Product.objects.filter(store=store, quantity=0)
-        for p in out_of_stock[:10]:
-            notifications.append({
-                'id': f'out-of-stock-{p.id}',
-                'type': 'out_of_stock',
-                'severity': 'high',
-                'message': f'{p.name} is out of stock',
-                'link': '/products',
-                'createdAt': p.updated_at,
-            })
-
-        low_stock = Product.objects.filter(store=store, quantity__gt=0, quantity__lte=F('low_stock_threshold'))
-        for p in low_stock[:10]:
-            notifications.append({
-                'id': f'low-stock-{p.id}',
-                'type': 'low_stock',
-                'severity': 'medium',
-                'message': f'{p.name} is running low ({p.quantity} left)',
-                'link': '/products',
-                'createdAt': p.updated_at,
-            })
-
-        stale_cutoff = timezone.now() - timedelta(days=14)
-        stale_invoices = Invoice.objects.filter(store=store, status='SENT', created_at__lte=stale_cutoff)
-        for inv in stale_invoices[:10]:
-            days_out = (timezone.now() - inv.created_at).days
-            notifications.append({
-                'id': f'stale-invoice-{inv.id}',
-                'type': 'stale_invoice',
-                'severity': 'medium',
-                'message': f'Invoice for {inv.customer_name} has been unpaid for {days_out} days',
-                'link': '/invoices',
-                'createdAt': inv.created_at,
-            })
-
-        notifications.sort(key=lambda n: n['createdAt'], reverse=True)
-        payload = {'notifications': notifications, 'count': len(notifications)}
-        safe_cache_set(cache_key, payload, NOTIFICATIONS_TTL)
-        return Response(payload)
+        return Response(compute_store_alerts(self.store))

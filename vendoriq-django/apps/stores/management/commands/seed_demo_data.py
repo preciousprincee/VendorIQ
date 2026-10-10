@@ -204,6 +204,7 @@ class Command(BaseCommand):
                 sale = Sale(
                     store=store, recorded_by=random.choice(recorders),
                     total_amount=amount, total_profit=profit,
+                    subtotal=amount, amount_paid=amount,  # POS fields: no discount, paid in full
                 )
                 plan.append((sale, sale_time, product, qty, unit_price, unit_cost, profit))
 

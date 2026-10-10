@@ -1,5 +1,8 @@
 from django.contrib import admin
+from django.contrib.admin.forms import AdminAuthenticationForm
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.core.exceptions import ValidationError
+from django.conf import settings as django_settings
 from unfold.admin import ModelAdmin, TabularInline
 from .models import User, LoginEvent
 from apps.stores.models import Store, Staff
@@ -13,6 +16,44 @@ try:
     _HAS_UNFOLD_FORMS = True
 except ImportError:
     _HAS_UNFOLD_FORMS = False
+
+
+class LockoutAwareAdminAuthForm(AdminAuthenticationForm):
+    """
+    Django Admin's login form ships with NO brute-force protection at all -
+    unlike the customer-facing API login (apps/authentication/views.py::LoginView),
+    which has a temporary, email-scoped lockout built on LoginEvent history
+    (see the "Login lockout" comment block in settings.py for the full
+    reasoning). That gap matters MORE here, not less: this admin panel is
+    the single highest-value target in the app - referral commission
+    rates, payout account details, AI provider API keys, every user's
+    data - sitting at the well-known default /admin/ path, yet it was the
+    least defended login surface in the project. This reuses the exact
+    same LoginEvent-based lockout so both login surfaces get equal
+    protection, rather than inventing a second, parallel mechanism.
+
+    Deliberately does NOT hook Django's global user_login_failed signal for
+    this: that signal also fires for the API LoginView's own authenticate()
+    call, which already records its own LoginEvent explicitly - a global
+    signal receiver would double-count every API login failure. Recording
+    failures here, self-contained to the admin form, avoids that entirely.
+    """
+    def clean(self):
+        username = self.cleaned_data.get('username')
+        if username and LoginEvent.is_locked_out(username):
+            raise ValidationError(
+                f'Too many failed login attempts. Try again in {django_settings.LOGIN_LOCKOUT_WINDOW_MINUTES} minutes.',
+                code='locked_out',
+            )
+        try:
+            return super().clean()
+        except ValidationError:
+            if username:
+                LoginEvent.record(self.request, email_attempted=username, success=False)
+            raise
+
+
+admin.site.login_form = LockoutAwareAdminAuthForm
 
 
 class StoreOwnedInline(TabularInline):
@@ -44,20 +85,29 @@ class LoginEventInline(TabularInline):
     Login/device history, right on the user's detail page - the most recent
     25 attempts (success and failure), newest first. Read-only: this is a
     log, not something an admin edits.
+
+    Capped to 25 via `max_num` (the formset's own get_queryset() slices
+    AFTER filtering by the parent user - see BaseInlineFormSet.__init__),
+    NOT by slicing get_queryset() here. Slicing this admin-level queryset
+    used to crash the user's change page with "Cannot filter a query once
+    a slice has been taken": Django's BaseInlineFormSet always calls
+    `.filter(user=<this user>)` on whatever queryset it's given to narrow
+    it to just this user's events, and Django refuses to further filter an
+    already-sliced queryset. "Add another" is suppressed separately, by
+    has_add_permission below, not by max_num - extra=0 already removes the
+    blank row, and max_num=0 would have hidden every EXISTING row too,
+    which is why nothing ever showed here even before the crash.
     """
     model = LoginEvent
     fk_name = 'user'
     extra = 0
-    max_num = 0  # never show an "add another" row - this is a log, not a form
+    max_num = 25
     can_delete = False
     fields = ['created_at', 'success', 'ip_address', 'device_type', 'browser', 'os']
     readonly_fields = fields
     verbose_name = 'Login event'
     verbose_name_plural = 'Recent login/device history (last 25)'
     ordering = ['-created_at']
-
-    def get_queryset(self, request):
-        return super().get_queryset(request)[:25]
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -66,13 +116,16 @@ class LoginEventInline(TabularInline):
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
     list_display = ['email', 'name', 'phone', 'is_staff', 'stores_owned_display', 'staff_roles_display', 'created_at']
-    list_filter = ['is_staff', 'is_active', 'is_superuser']
+    list_filter = ['is_staff', 'is_active', 'is_superuser', 'phone_verified', 'email_verified']
     search_fields = ['email', 'name', 'phone']
+    # The referral code is derived from the phone number (User.save()) -
+    # shown here for reference, never edited directly.
+    readonly_fields = ['referral_code']
     ordering = ['-created_at']
     inlines = [StoreOwnedInline, StaffRoleInline, LoginEventInline]
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Personal', {'fields': ('name', 'phone')}),
+        ('Personal', {'fields': ('name', 'phone', 'phone_verified', 'email_verified', 'referral_code')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser')}),
     )
     add_fieldsets = (

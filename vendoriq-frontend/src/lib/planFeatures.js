@@ -39,11 +39,11 @@ export const FEATURE_COPY = {
   },
   customer_management: {
     title: 'Unlock Customer Management',
-    description: 'Keep a record of your regular customers and their purchase history.',
+    description: 'Keep a record of your customers, sell to them on credit, and see who owes you and how much.',
   },
   cloud_backup: {
     title: 'Unlock Cloud Backup',
-    description: 'Keep your business data safely backed up and recoverable if your device is lost or damaged.',
+    description: 'Download a complete backup of your store - products, sales, customers, expenses and invoices - any time, and keep a copy safe if your device is lost or damaged.',
   },
   advanced_low_stock_insights: {
     title: 'Unlock Advanced Low-Stock Insights',

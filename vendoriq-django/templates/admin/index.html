@@ -152,7 +152,7 @@
 
   <!-- AI usage -->
   <div class="viq-section" id="ai-usage">
-    <p class="viq-section-title">AI assistant usage</p>
+    <p class="viq-section-title">AI assistant usage &nbsp;<a href="{% url 'admin_ai_usage' %}" class="viq-pill">View users &amp; conversations</a></p>
     <div class="viq-grid viq-grid-3">
       <div class="viq-card">
         <p class="viq-label">Messages sent today</p>
@@ -187,10 +187,13 @@
     <p class="viq-hint">
       Of {{ subscriptions.tracked_accounts }} account{{ subscriptions.tracked_accounts|pluralize }} billing has looked at so far
       (a Subscription row is created the first time a user's plan is checked, not at signup - see apps/billing/entitlements.py).
-      MRR is the sum of what each currently-paying subscriber actually locked in when they upgraded, not count &times;
-      today's ₦{{ subscriptions.pro_price|floatformat:0 }}/month price - so changing the Pro price only affects future
-      upgrades, never retroactively "charges" existing subscribers more. There's no payment ledger yet (the upgrade
-      flow is mocked), so lifetime/historical revenue isn't shown here on purpose rather than guessed at.
+      MRR normalizes what each currently-paying subscriber actually locked in when they purchased/renewed (Monthly
+      starts at ₦{{ subscriptions.pro_price|floatformat:0 }}/mo, with 6-Month and Annual priced separately - see
+      <a href="{% url 'admin_plan_settings' %}">Plans &amp; Settings</a>) down to a monthly-equivalent before summing
+      - never count &times; today's price, and never a raw sum across different billing cycles. See
+      <a href="{% url 'admin_revenue' %}">Revenue</a> for the full breakdown, and
+      <a href="{% url 'admin:billing_subscriptionpurchase_changelist' %}">Billing &rsaquo; Subscription purchases</a>
+      for the itemized, immutable payment ledger.
     </p>
     <div class="viq-grid viq-grid-4">
       <div class="viq-card">
@@ -240,7 +243,7 @@
           <p class="viq-panel-row-title">{{ s.user.name }}</p>
           <p class="viq-panel-row-sub">{{ s.user.email }}</p>
         </div>
-        <span class="viq-panel-row-amount">{% if s.is_complimentary %}Comp{% else %}₦{{ subscriptions.pro_price|floatformat:0 }}/mo{% endif %}</span>
+        <span class="viq-panel-row-amount">{% if s.is_complimentary %}Comp{% else %}₦{{ s.price_ngn|floatformat:0 }} ({{ s.get_billing_cycle_display|default:"—" }}){% endif %}</span>
       </a>
       {% endfor %}
     </div>

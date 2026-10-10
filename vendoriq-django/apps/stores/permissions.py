@@ -3,7 +3,16 @@ from rest_framework.exceptions import PermissionDenied, NotFound
 from .models import Store, Staff
 
 
-def get_store_or_404(store_id, user):
+def get_store_or_404(store_id):
+    """
+    Existence check ONLY - deliberately takes no `user` argument (an
+    earlier version did, and silently ignored it, which is exactly the
+    kind of signature that invites a future caller to assume passing
+    `user` means this also checks access - it never did). Authorization is
+    require_store_access()'s job, always as a separate, explicit call -
+    see StoreScopedAPIView.initial() for why that pairing can't be
+    accidentally skipped for anything using that base class.
+    """
     try:
         return Store.objects.get(id=store_id)
     except Store.DoesNotExist:

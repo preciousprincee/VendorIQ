@@ -10,7 +10,7 @@ class StoreScopedAPIView(APIView):
 
     Why this exists: every one of these views used to open with the same
     two lines -
-        store = get_store_or_404(store_id, request.user)
+        store = get_store_or_404(store_id)
         require_store_access(store, request.user, [...])
     - repeated by hand in every method of every view. That's a convention,
     not a guarantee: it's entirely possible to add a new view, forget those
@@ -62,5 +62,5 @@ class StoreScopedAPIView(APIView):
         super().initial(request, *args, **kwargs)
         store_id = kwargs.get('store_id')
         if store_id is not None:
-            self.store = get_store_or_404(store_id, request.user)
+            self.store = get_store_or_404(store_id)
             self.role = require_store_access(self.store, request.user, self.allowed_roles)

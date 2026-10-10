@@ -17,7 +17,16 @@
 
   --c-text: 17 24 21;        /* primary text */
   --c-text-muted: 107 114 106;
-  --c-text-dim: 156 163 150;
+  /* WCAG AA fix: the original value (156 163 150) only hit ~2.5:1 against
+     this theme's near-white card/page backgrounds - well under the 4.5:1
+     minimum for normal text, so every timestamp/nav-label/hint styled
+     with text-slate-dim (143 usages app-wide) was failing contrast. This
+     background is light enough that there isn't room for a THIRD tier
+     meaningfully dimmer than --c-text-muted and still compliant, so this
+     is deliberately close to muted (110 117 109 clears both the card and
+     page backgrounds at ~4.5-4.7:1; true 3-tier separation would need a
+     less-than-near-white background). */
+  --c-text-dim: 110 117 109;
 
   --c-brand-50: 234 247 239;
   --c-brand-400: 52 168 112;
@@ -37,7 +46,11 @@
 
   --c-text: 240 244 241;
   --c-text-muted: 140 163 150;
-  --c-text-dim: 90 110 100;
+  /* Same WCAG AA fix as :root above, but dark mode had headroom for a
+     genuinely distinct third tier: 123 141 133 clears the card/page/header
+     backgrounds at ~4.85-5.5:1 while staying visibly dimmer than
+     --c-text-muted (the original 90 110 100 only hit ~3.1:1). */
+  --c-text-dim: 123 141 133;
 
   --c-brand-50: 22 40 30;
   --c-brand-400: 61 181 124;
@@ -66,7 +79,15 @@
   .card-accent { @apply card border-l-4 border-l-brand-500 bg-brand-50/40 dark:bg-brand-500/5; }
   .card-hero { @apply bg-brand-700 text-white rounded-2xl shadow-md; }
 
-  .btn-primary { @apply bg-brand-500 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-600 active:bg-brand-700 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm; }
+  /* WCAG AA fix: bg-brand-500 (this theme's normal button green) only gives
+     white button text ~3.4:1 in dark mode - under the 4.5:1 minimum for
+     normal-weight text (it happens to pass in light mode, ~4.7:1, because
+     dark mode's brand-500 is a lighter/brighter shade of the same color
+     for on-dark-background legibility elsewhere, which works against it
+     here). dark:bg-brand-700 (~6.3:1) fixes it; hover/active move via
+     brightness rather than a lighter brand shade so contrast can only
+     increase, never accidentally regress below AA again. */
+  .btn-primary { @apply bg-brand-500 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-600 active:bg-brand-700 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm dark:bg-brand-700 dark:hover:bg-brand-700 dark:hover:brightness-90 dark:active:bg-brand-700 dark:active:brightness-75; }
   .btn-ghost { @apply text-slate-muted hover:text-slate-text hover:bg-navy-700 px-4 py-2.5 rounded-xl transition-colors duration-150; }
   .btn-danger { @apply bg-red-50 text-red-600 border border-red-200 px-4 py-2.5 rounded-xl hover:bg-red-100 transition-colors duration-150 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-800/50; }
 
@@ -82,4 +103,19 @@
   .badge-success { @apply badge bg-brand-50 text-brand-600 dark:text-brand-400; }
 
   .divider { @apply border-t border-navy-700; }
+}
+
+/* ---- Receipt printing -------------------------------------------------
+   The receipt modal is a portal on <body>. When printing, hide the whole
+   app and show only the receipt, sized for an 80mm thermal roll (it also
+   prints fine on A4). */
+@media print {
+  body > *:not(.receipt-portal) { display: none !important; }
+  .receipt-portal { position: static !important; display: block !important; background: none !important; padding: 0 !important; }
+  .receipt-portal > div { box-shadow: none !important; border: 0 !important; max-height: none !important; width: 80mm !important; max-width: 80mm !important; margin: 0 auto !important; background: #fff !important; }
+  .receipt-scroll { overflow: visible !important; padding: 0 !important; }
+  .receipt-paper { color: #000 !important; background: #fff !important; font-size: 12px !important; }
+  .receipt-paper * { color: #000 !important; border-color: #000 !important; }
+  .no-print { display: none !important; }
+  @page { margin: 3mm; }
 }

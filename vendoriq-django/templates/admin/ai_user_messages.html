@@ -1,0 +1,73 @@
+{% extends 'admin/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+  {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+{% include "admin/_viq_dashboard_styles.html" %}
+.viq-chat { max-width: 760px; display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.viq-day { align-self: center; font-size: 11px; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 3px 12px; margin: 8px 0 2px; }
+html.dark .viq-day { background: #27272a; color: #9ca3af; }
+.viq-store-tag { align-self: center; font-size: 11px; font-weight: 700; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 2px 10px; }
+html.dark .viq-store-tag { background: rgba(146,64,14,.25); color: #fbbf24; }
+.viq-msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.viq-msg-user { align-self: flex-end; background: #1e8449; color: #fff; border-bottom-right-radius: 4px; }
+.viq-msg-assistant { align-self: flex-start; background: #f3f4f6; color: #111827; border-bottom-left-radius: 4px; }
+html.dark .viq-msg-assistant { background: #27272a; color: #f4f4f5; }
+.viq-msg-time { display: block; font-size: 10.5px; opacity: .65; margin-top: 4px; }
+.viq-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.viq-filter a { font-size: 12px; padding: 4px 12px; border-radius: 999px; background: #f3f4f6; color: #374151; text-decoration: none; }
+html.dark .viq-filter a { background: #27272a; color: #d4d4d8; }
+.viq-filter a.active { background: #1e8449; color: #fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+
+  <p class="viq-hint" style="margin-bottom:14px;"><a href="{% url 'admin_ai_usage' %}">&larr; All AI usage</a></p>
+
+  <div class="viq-section">
+    <p class="viq-section-title">{{ chat_user.name }}</p>
+    <div class="viq-panel">
+      <div class="viq-status-row">
+        <div>
+          <p class="viq-status-label">{{ chat_user.email }}</p>
+          <p class="viq-status-sub">{{ total }} message{{ total|pluralize }}{% if selected_store %} in {{ selected_store.name }}{% endif %}{% if shown < total %} &middot; showing the latest {{ shown }}{% endif %}</p>
+        </div>
+        <a href="{% url 'admin:authentication_user_change' chat_user.pk %}" class="viq-pill">Open user</a>
+      </div>
+    </div>
+  </div>
+
+  {% if stores|length > 1 %}
+  <div class="viq-filter">
+    <a href="?" class="{% if not selected_store %}active{% endif %}">All stores</a>
+    {% for st in stores %}
+    <a href="?store={{ st.id }}" class="{% if selected_store and selected_store.id == st.id %}active{% endif %}">{{ st.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="viq-panel">
+    {% if thread %}
+    <div class="viq-chat">
+      {% for m in thread %}
+        {% ifchanged m.created_at.date %}<span class="viq-day">{{ m.created_at|date:"l, M j, Y" }}</span>{% endifchanged %}
+        {% if multiple_stores %}{% ifchanged m.store_id %}<span class="viq-store-tag">{{ m.store.name }}</span>{% endifchanged %}{% endif %}
+        <div class="viq-msg {% if m.role == 'user' %}viq-msg-user{% else %}viq-msg-assistant{% endif %}">{{ m.content }}<span class="viq-msg-time">{% if m.role == 'user' %}{{ chat_user.name }}{% else %}VendorIQ AI{% endif %} &middot; {{ m.created_at|date:"g:i A" }}{% if m.deleted_at %} &middot; <em title="The user cleared this from their chat on {{ m.deleted_at|date:'M j, Y g:i A' }}">deleted by user</em>{% endif %}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="viq-panel-empty">No messages.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

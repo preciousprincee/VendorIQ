@@ -3,6 +3,7 @@ import { Send, Bot, User, Trash2 } from 'lucide-react'
 import { useStore } from '../context/StoreContext'
 import { useFeatureAccess } from '../hooks/useFeatureAccess'
 import UpgradePrompt from '../components/billing/UpgradePrompt'
+import ConfirmDialog from '../components/ConfirmDialog'
 import api from '../lib/api'
 import { getErrorMessage } from '../lib/utils'
 import toast from 'react-hot-toast'
@@ -25,6 +26,8 @@ export default function AIPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -38,8 +41,15 @@ export default function AIPage() {
       try {
         const { data } = await api.get(`/ai/${activeStore.id}/history/`)
         if (!cancelled && data.messages?.length) setMessages(data.messages)
-      } catch {
-        // No saved history yet, or a transient error - fall back to the greeting silently.
+      } catch (err) {
+        // A 404 here just means "no store/no history yet" and is fine to
+        // ignore - but any other failure (500, network, auth) means the
+        // saved conversation genuinely couldn't be loaded, which looks
+        // exactly like "my chat got deleted" if we stay silent about it.
+        // Surface that distinction instead of guessing.
+        if (!cancelled && err?.response?.status && err.response.status !== 404) {
+          toast.error('Could not load your saved conversation. Showing a new chat for now.')
+        }
       } finally {
         if (!cancelled) setHistoryLoaded(true)
       }
@@ -72,13 +82,16 @@ export default function AIPage() {
   }
 
   const handleClearChat = async () => {
-    if (!confirm('Clear this conversation? This cannot be undone.')) return
+    setClearing(true)
     try {
       await api.delete(`/ai/${activeStore.id}/history/`)
       setMessages([GREETING])
       toast.success('Chat cleared')
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setClearing(false)
+      setConfirmingClear(false)
     }
   }
 
@@ -98,11 +111,21 @@ export default function AIPage() {
           <p className="text-xs text-slate-dim">{activeStore?.name} · Powered by Groq</p>
         </div>
         {aiAllowed && messages.length > 1 && (
-          <button onClick={handleClearChat} className="text-slate-dim hover:text-red-500 dark:hover:text-red-400 transition-colors p-1.5" title="Clear chat">
+          <button onClick={() => setConfirmingClear(true)} aria-label="Clear chat" className="text-slate-dim hover:text-red-500 dark:hover:text-red-400 transition-colors p-1.5" title="Clear chat">
             <Trash2 size={16} />
           </button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmingClear}
+        title="Clear this conversation?"
+        message="This cannot be undone."
+        confirmLabel="Clear"
+        loading={clearing}
+        onConfirm={handleClearChat}
+        onCancel={() => setConfirmingClear(false)}
+      />
 
       {/* Messages */}
       {!aiAllowed ? (

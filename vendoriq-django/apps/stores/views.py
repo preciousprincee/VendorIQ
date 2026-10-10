@@ -90,6 +90,15 @@ class StaffListCreateView(StoreScopedAPIView):
         staff = Staff.objects.filter(store=self.store).select_related('user')
         return Response({'staff': StaffSerializer(staff, many=True).data})
 
+    def get_throttles(self):
+        # Only the POST (the email-probing surface) gets the tight limit.
+        from rest_framework.settings import api_settings
+        from vendoriq.throttles import StaffAddThrottle
+        throttles = [cls() for cls in api_settings.DEFAULT_THROTTLE_CLASSES]
+        if self.request.method == 'POST':
+            throttles.append(StaffAddThrottle())
+        return throttles
+
     def post(self, request, store_id):
         store = self.store
         email = request.data.get('email')
@@ -109,9 +118,12 @@ class StaffListCreateView(StoreScopedAPIView):
         # entirely, not represented as a Staff row at all.
         if role not in ['MANAGER', 'CASHIER']:
             return Response({'error': 'Invalid role.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
+        # Case-insensitive like login/registration; a non-string email (null,
+        # a list...) is a plain 400, not a lookup.
+        if not isinstance(email, str) or not email.strip():
+            return Response({'error': 'A valid email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.filter(email__iexact=email.strip()).first()
+        if user is None:
             return Response({'error': 'No user found with that email. They must register first.'}, status=status.HTTP_404_NOT_FOUND)
         if user.id == store.owner_id:
             return Response({'error': "You're already the owner of this store - you can't add yourself as staff."}, status=status.HTTP_400_BAD_REQUEST)

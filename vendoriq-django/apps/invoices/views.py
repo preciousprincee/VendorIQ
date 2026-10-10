@@ -2,6 +2,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.db import transaction
+from rest_framework.settings import api_settings
 from .models import Invoice, InvoiceItem
 from .serializers import InvoiceSerializer
 from .tasks import send_invoice_email_task
@@ -11,6 +14,37 @@ from apps.products.models import Product
 from apps.sales.models import Sale
 from apps.billing.entitlements import require_invoicing
 from vendoriq.cache_utils import invalidate_store_insights
+from vendoriq.throttles import InvoiceSendThrottle
+
+MAX_INVOICE_ITEMS = 200
+MAX_MONEY = Decimal('9999999999.99')  # DecimalField(max_digits=12, decimal_places=2)
+
+
+def _clean_email(value):
+    """Returns (email | None, error | None). None for blank input."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, None
+    if not isinstance(value, str):
+        return None, 'Enter a valid email address.'
+    value = value.strip()
+    try:
+        validate_email(value)  # also rejects CR/LF (header injection)
+    except ValidationError:
+        return None, 'Enter a valid email address.'
+    return value, None
+
+
+def _parse_money(raw):
+    """Decimal from request JSON, or None if not a finite, non-negative, storable amount. Decimal('NaN')/'Infinity' parse fine but crash arithmetic and the DB write (HTTP 500)."""
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
+    if not value.is_finite() or value < 0 or value > MAX_MONEY:
+        return None
+    return value.quantize(Decimal('0.01'))
 
 
 class InvoiceListCreateView(StoreScopedAPIView):
@@ -28,70 +62,75 @@ class InvoiceListCreateView(StoreScopedAPIView):
         store = self.store
         require_invoicing(store.owner)
         items = request.data.get('items', [])
-        if not items:
+        if not isinstance(items, list) or not items:
             return Response({'error': 'At least one item is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(items) > MAX_INVOICE_ITEMS:
+            return Response({'error': f'An invoice can have at most {MAX_INVOICE_ITEMS} items.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # customer_name is NOT NULL: a missing one used to reach the INSERT
+        # as None and raise IntegrityError (HTTP 500).
+        customer_name = request.data.get('customerName')
+        customer_name = customer_name.strip() if isinstance(customer_name, str) else ''
+        if not customer_name:
+            return Response({'error': 'Customer name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(customer_name) > 255:
+            return Response({'error': 'Customer name is too long.'}, status=status.HTTP_400_BAD_REQUEST)
+        customer_email, email_error = _clean_email(request.data.get('customerEmail'))
+        if email_error:
+            return Response({'error': email_error}, status=status.HTTP_400_BAD_REQUEST)
+        customer_phone = request.data.get('customerPhone')
+        customer_phone = customer_phone.strip()[:20] if isinstance(customer_phone, str) and customer_phone.strip() else None
 
         total_amount = Decimal('0')
         items_data = []
 
         for item in items:
+            if not isinstance(item, dict):
+                return Response({'error': 'Each item must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 product = Product.objects.get(id=item.get('productId'), store=store)
             except (Product.DoesNotExist, ValueError, ValidationError, TypeError):
-                # ValueError/ValidationError/TypeError: a malformed or
-                # missing productId (not a valid UUID) used to reach
-                # Product.objects.get() unvalidated and raise one of these
-                # uncaught - a raw 500 instead of a clean 404/400. Same
-                # root cause class as the ProtectedError-on-delete bug
-                # fixed earlier: an unvalidated value from the request
-                # reaching the ORM directly.
+                # A malformed or missing productId (not a valid UUID) must
+                # be a clean 404, not an uncaught exception.
                 return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
-            # Quantity had NO validation at all before this - neither a
-            # type check nor a positivity check. A missing quantity would
-            # crash on int(None), and a NEGATIVE quantity sailed straight
-            # through: unit_price * a negative int produces a negative
-            # contribution to total_amount, silently corrupting the
-            # invoice total sent to a real customer. Same bug, same fix
-            # shape as RecordSaleSerializer in apps/sales/serializers.py -
-            # this view just doesn't use a dedicated input serializer, so
-            # the check lives inline here instead, matching how unit_price
-            # right below is already validated in this same loop.
-            try:
-                quantity = int(item.get('quantity'))
-            except (TypeError, ValueError):
+            # bool is an int subclass and float('nan') survives int() checks
+            # elsewhere - insist on a real positive integer.
+            raw_qty = item.get('quantity')
+            if isinstance(raw_qty, bool):
                 return Response({'error': 'Quantity must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
-            if quantity < 1:
-                return Response({'error': 'Quantity must be at least 1.'}, status=status.HTTP_400_BAD_REQUEST)
-            # Decimal throughout - Invoice.total_amount and
-            # InvoiceItem.unit_price are both DecimalFields (exact), so
-            # doing this math in float (as this used to) would silently
-            # bake binary floating-point rounding into the saved total on
-            # every invoice - see the identical fix + fuller explanation
-            # in apps/sales/views.py. Going through str() before Decimal()
-            # matters here specifically because unitPrice can come from
-            # the request body as a JSON number, which Python's json
-            # decoder already turns into an imprecise float BEFORE this
-            # code ever sees it - Decimal(str(x)) reads the decimal text
-            # representation directly rather than inheriting whatever
-            # binary float imprecision request.data handed us.
-            raw_price = item.get('unitPrice')
             try:
-                unit_price = Decimal(str(raw_price)) if raw_price is not None else product.selling_price
-            except InvalidOperation:
-                return Response({'error': 'Invalid unit price.'}, status=status.HTTP_400_BAD_REQUEST)
+                quantity = int(raw_qty)
+            except (TypeError, ValueError, OverflowError):
+                return Response({'error': 'Quantity must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+            if quantity < 1 or quantity > 1_000_000:
+                return Response({'error': 'Quantity must be between 1 and 1,000,000.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Decimal throughout (see apps/sales/views.py). Decimal(str(x))
+            # reads the decimal text rather than inheriting float drift.
+            raw_price = item.get('unitPrice')
+            if raw_price is None:
+                unit_price = product.selling_price
+            else:
+                unit_price = _parse_money(raw_price)
+                if unit_price is None:
+                    return Response({'error': 'Invalid unit price.'}, status=status.HTTP_400_BAD_REQUEST)
             total_amount += unit_price * quantity
             items_data.append({'product': product, 'quantity': quantity, 'unit_price': unit_price})
 
-        invoice = Invoice.objects.create(
-            store=store,
-            customer_name=request.data.get('customerName'),
-            customer_email=request.data.get('customerEmail'),
-            customer_phone=request.data.get('customerPhone'),
-            total_amount=total_amount,
-        )
+        if total_amount > MAX_MONEY:
+            return Response({'error': 'Invoice total is too large.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        for item_data in items_data:
-            InvoiceItem.objects.create(invoice=invoice, **item_data)
+        # One transaction: a failure creating an item used to leave an
+        # itemless invoice (with a real total) behind.
+        with transaction.atomic():
+            invoice = Invoice.objects.create(
+                store=store,
+                customer_name=customer_name,
+                customer_email=customer_email,
+                customer_phone=customer_phone,
+                total_amount=total_amount,
+            )
+            for item_data in items_data:
+                InvoiceItem.objects.create(invoice=invoice, **item_data)
 
         invoice.refresh_from_db()
         return Response({'invoice': InvoiceSerializer(invoice).data}, status=status.HTTP_201_CREATED)
@@ -138,6 +177,7 @@ class InvoiceStatusView(StoreScopedAPIView):
 class InvoiceSendView(StoreScopedAPIView):
     """Queues the invoice email to the customer and marks it SENT."""
     allowed_roles = None
+    throttle_classes = [*api_settings.DEFAULT_THROTTLE_CLASSES, InvoiceSendThrottle]
 
     def post(self, request, store_id, invoice_id):
         store = self.store
@@ -149,7 +189,9 @@ class InvoiceSendView(StoreScopedAPIView):
 
         # Allow sending to an address typed in on this request, without
         # requiring the customer's email to have been saved on the invoice.
-        recipient = request.data.get('email') or invoice.customer_email
+        recipient, email_error = _clean_email(request.data.get('email') or invoice.customer_email)
+        if email_error:
+            return Response({'error': email_error}, status=status.HTTP_400_BAD_REQUEST)
         if not recipient:
             return Response(
                 {'error': 'No customer email on file. Add one to send this invoice.'},
@@ -189,29 +231,39 @@ class CreateInvoiceFromSaleView(StoreScopedAPIView):
     def post(self, request, store_id, sale_id):
         store = self.store
         require_invoicing(store.owner)
-        customer_name = (request.data.get('customerName') or '').strip()
+        raw_name = request.data.get('customerName')
+        customer_name = raw_name.strip() if isinstance(raw_name, str) else ''
         if not customer_name:
             return Response({'error': 'Customer name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(customer_name) > 255:
+            return Response({'error': 'Customer name is too long.'}, status=status.HTTP_400_BAD_REQUEST)
+        customer_email, email_error = _clean_email(request.data.get('customerEmail'))
+        if email_error:
+            return Response({'error': email_error}, status=status.HTTP_400_BAD_REQUEST)
+        customer_phone = request.data.get('customerPhone')
+        customer_phone = customer_phone.strip()[:20] if isinstance(customer_phone, str) and customer_phone.strip() else None
 
         try:
             sale = Sale.objects.prefetch_related('sale_items__product').get(id=sale_id, store=store)
         except Sale.DoesNotExist:
             return Response({'error': 'Sale not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        invoice = Invoice.objects.create(
-            store=store,
-            customer_name=customer_name,
-            customer_email=request.data.get('customerEmail') or None,
-            customer_phone=request.data.get('customerPhone') or None,
-            total_amount=sale.total_amount,
-        )
-        for item in sale.sale_items.all():
-            InvoiceItem.objects.create(
-                invoice=invoice,
-                product=item.product,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
+        with transaction.atomic():
+            invoice = Invoice.objects.create(
+                store=store,
+                customer_name=customer_name,
+                customer_email=customer_email,
+                customer_phone=customer_phone,
+                total_amount=sale.total_amount,
             )
+            for item in sale.sale_items.all():
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    product=item.product,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                )
 
         invoice.refresh_from_db()
         return Response({'invoice': InvoiceSerializer(invoice).data}, status=status.HTTP_201_CREATED)

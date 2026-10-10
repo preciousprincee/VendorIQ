@@ -1,8 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { StoreProvider, useStore } from './context/StoreContext'
-import { SubscriptionProvider } from './context/SubscriptionContext'
+import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext'
+import { OfflineProvider } from './context/OfflineContext'
 import AppLayout from './components/layout/AppLayout'
 import InstallPrompt from './components/ui/InstallPrompt'
 import LoginPage from './pages/LoginPage'
@@ -19,11 +21,50 @@ import AIPage from './pages/AIPage'
 import ExpensesPage from './pages/ExpensesPage'
 import TransactionsPage from './pages/TransactionsPage'
 import ProfilePage from './pages/ProfilePage'
+import SettingsPage from './pages/SettingsPage'
+import ReferralsPage from './pages/ReferralsPage'
 import SubscriptionPage from './pages/SubscriptionPage'
+import VerifyPage from './pages/VerifyPage'
+import CustomersPage from './pages/CustomersPage'
+import ShiftsPage from './pages/ShiftsPage'
+import PrivacyPolicyPage from './pages/legal/PrivacyPolicyPage'
+import TermsPage from './pages/legal/TermsPage'
+import CookiePolicyPage from './pages/legal/CookiePolicyPage'
+import RefundPolicyPage from './pages/legal/RefundPolicyPage'
+import CookieNotice from './components/legal/CookieNotice'
+import { identify, pageview } from './lib/analytics'
+
+// Feeds analytics from the app's own state. Renders nothing (see lib/analytics.js).
+function AnalyticsBridge() {
+  const { user } = useAuth()
+  const { activeStore } = useStore()
+  const { subscription, plan } = useSubscription()
+  const location = useLocation()
+  const userId = user?.id
+  const role = activeStore?.role
+  const planKnown = subscription ? plan : undefined   // don't claim 'FREE' before the plan has loaded
+
+  // Identity: the opaque user id plus two low-cardinality facts.
+  useEffect(() => {
+    identify(userId ? { id: userId } : null, { role, plan: planKnown })
+  }, [userId, role, planKnown])
+
+  // One $pageview per route change. '/' only redirects to the real landing page, so it is not counted.
+  useEffect(() => {
+    if (location.pathname !== '/') pageview(location.pathname)
+  }, [location.pathname])
+
+  return null
+}
 
 function RequireAuth({ children }) {
   const { user } = useAuth()
   if (!user) return <Navigate to="/welcome" replace />
+  // Email AND phone must be verified before anything else (the trial's
+  // anti-abuse key is the phone number, and the email is where receipts go).
+  // `needs_verification` comes from the server - see AuthContext.refreshUser,
+  // which re-syncs it on every app load so pre-existing accounts are caught too.
+  if (user.needs_verification) return <Navigate to="/verify" replace />
   return children
 }
 
@@ -59,7 +100,10 @@ function RequireOwnerOnly({ children }) {
 
 function DefaultRedirect() {
   const { activeStore } = useStore()
-  return <Navigate to={activeStore?.role === 'CASHIER' ? '/sales' : '/dashboard'} replace />
+  // Offline, the dashboard has nothing to show (it is all live numbers) but the
+  // till works - open on it so a shop that starts its day without internet can sell.
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  return <Navigate to={activeStore?.role === 'CASHIER' || offline ? '/sales' : '/dashboard'} replace />
 }
 
 function AppRoutes() {
@@ -68,22 +112,35 @@ function AppRoutes() {
       <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/legal/terms" element={<TermsPage />} />
+      <Route path="/legal/cookies" element={<CookiePolicyPage />} />
+      <Route path="/legal/refunds" element={<RefundPolicyPage />} />
+      <Route path="/verify" element={<VerifyPage />} />
       <Route path="/stores" element={<RequireAuth><StoresPage /></RequireAuth>} />
       <Route path="/" element={
-        <RequireAuth><RequireStore><AppLayout /></RequireStore></RequireAuth>
+        <RequireAuth><AppLayout /></RequireAuth>
       }>
-        <Route index element={<DefaultRedirect />} />
-        <Route path="dashboard" element={<RequireFinancialAccess><DashboardPage /></RequireFinancialAccess>} />
-        <Route path="products" element={<ProductsPage />} />
-        <Route path="sales" element={<SalesPage />} />
-        <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="staff" element={<RequireStaffAccess><StaffPage /></RequireStaffAccess>} />
-        <Route path="insights" element={<RequireFinancialAccess><InsightsPage /></RequireFinancialAccess>} />
-        <Route path="ai" element={<RequireFinancialAccess><AIPage /></RequireFinancialAccess>} />
-        <Route path="expenses" element={<RequireFinancialAccess><ExpensesPage /></RequireFinancialAccess>} />
-        <Route path="transactions" element={<RequireFinancialAccess><TransactionsPage /></RequireFinancialAccess>} />
+        <Route index element={<RequireStore><DefaultRedirect /></RequireStore>} />
+        <Route path="dashboard" element={<RequireStore><RequireFinancialAccess><DashboardPage /></RequireFinancialAccess></RequireStore>} />
+        <Route path="products" element={<RequireStore><ProductsPage /></RequireStore>} />
+        <Route path="sales" element={<RequireStore><SalesPage /></RequireStore>} />
+        <Route path="invoices" element={<RequireStore><InvoicesPage /></RequireStore>} />
+        <Route path="customers" element={<RequireStore><CustomersPage /></RequireStore>} />
+        <Route path="shifts" element={<RequireStore><ShiftsPage /></RequireStore>} />
+        <Route path="staff" element={<RequireStore><RequireStaffAccess><StaffPage /></RequireStaffAccess></RequireStore>} />
+        <Route path="insights" element={<RequireStore><RequireFinancialAccess><InsightsPage /></RequireFinancialAccess></RequireStore>} />
+        <Route path="ai" element={<RequireStore><RequireFinancialAccess><AIPage /></RequireFinancialAccess></RequireStore>} />
+        <Route path="expenses" element={<RequireStore><RequireFinancialAccess><ExpensesPage /></RequireFinancialAccess></RequireStore>} />
+        <Route path="transactions" element={<RequireStore><RequireFinancialAccess><TransactionsPage /></RequireFinancialAccess></RequireStore>} />
+        {/* Profile and Referrals are account-level, not store-level - a
+            brand-new user with no store yet can still reach these (e.g.
+            from a "Profile" link on /stores) to grab their referral code
+            and link, or edit their name/phone, before ever creating one. */}
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="subscription" element={<RequireOwnerOnly><SubscriptionPage /></RequireOwnerOnly>} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="referrals" element={<ReferralsPage />} />
+        <Route path="subscription" element={<RequireStore><RequireOwnerOnly><SubscriptionPage /></RequireOwnerOnly></RequireStore>} />
       </Route>
       <Route path="*" element={<RequireAuth><RequireStore><DefaultRedirect /></RequireStore></RequireAuth>} />
     </Routes>
@@ -96,8 +153,11 @@ export default function App() {
       <AuthProvider>
         <StoreProvider>
           <SubscriptionProvider>
+            <OfflineProvider>
+            <AnalyticsBridge />
             <AppRoutes />
             <InstallPrompt />
+            <CookieNotice />
             <Toaster
               position="top-center"
               toastOptions={{
@@ -106,6 +166,7 @@ export default function App() {
                 error: { iconTheme: { primary: '#EF4444', secondary: 'rgb(var(--c-navy-800))' } },
               }}
             />
+            </OfflineProvider>
           </SubscriptionProvider>
         </StoreProvider>
       </AuthProvider>

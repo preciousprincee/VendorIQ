@@ -14,8 +14,10 @@ accepts any user (owner or staff); callers pass `store.owner` for
 store-scoped checks and `request.user` for account-level ones (creating a
 new store).
 """
+from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
+from apps.authentication.phone import normalize_phone
 from .models import Subscription, SubscriptionStatus
 from .plans import FREE, PRO, get_plan_config, plan_limit, plan_has_feature
 from .exceptions import UpgradeRequired
@@ -37,41 +39,90 @@ def get_effective_plan(user):
     return get_subscription(user).effective_plan
 
 
-class TrialAlreadyUsedError(Exception):
-    """Raised by start_trial() when a user tries to start a second trial - see that function."""
+class TrialNotAllowedError(Exception):
+    """Base class for every reason start_trial() refuses - callers that just want to show the message catch this."""
 
 
-def start_trial(user):
+class TrialAlreadyUsedError(TrialNotAllowedError):
+    """Raised by start_trial() when a user tries to start a second trial (on this account, or via a phone number that's already used one) - see that function."""
+
+
+class AlreadyOnProError(TrialNotAllowedError):
+    """Raised by start_trial() for an account that already has Pro (paid, complimentary, or a running trial)."""
+
+
+def start_trial(user, ip_address=None):
     """
     Starts a free Pro trial for `user`, lasting the current trial length
     (apps/billing/models.py::get_trial_period_days() - live-editable from
-    Django Admin, not a redeploy-only env var) from right now. One trial per
-    account, ever - `has_used_trial` blocks a second one (a user cancelling
-    and re-starting a trial to get indefinite free Pro would otherwise be
-    trivial). An admin can reset that flag from Django admin for a genuine
+    Django Admin, not a redeploy-only env var) from right now.
+
+    Abuse prevention (spec: "a user should not be able to repeatedly create
+    trials by creating new accounts"):
+    - `has_used_trial` blocks a second trial on THIS account, ever.
+    - If the account has a phone number on file, a trial is also blocked
+      if any OTHER account has already used a trial with that same
+      (digits-only-normalized) phone number - a new email address alone is
+      not enough to get a second trial, since the phone number travels
+      with the person, not the account. Phone is used rather than IP
+      because Nigerian mobile networks commonly share IPs across many
+      unrelated customers (CGNAT) - hard-blocking on IP would lock out
+      legitimate users far more than it would stop abuse.
+    - The IP address a trial was started from is still recorded (not used
+      to block) so an admin can spot a suspicious cluster of trials from
+      the same address and investigate/revoke manually.
+
+    An admin can reset `has_used_trial` from Django admin for a genuine
     support case - see apps/billing/admin.py's "Reset trial eligibility"
-    action.
+    action; that action also clears trial_phone so a legitimate second
+    trial isn't blocked by the phone check either.
 
     Does nothing to an account that's already on Pro (paid or comped) -
     call sites should check get_effective_plan(user) == FREE first if they
     want to show/hide a "start trial" button rather than relying on this
     raising for that case too.
     """
-    sub = get_subscription(user)
-    if sub.has_used_trial:
-        raise TrialAlreadyUsedError("You've already used your free trial.")
-    now = timezone.now()
-    sub.plan = PRO
-    sub.status = SubscriptionStatus.TRIAL
-    sub.trial_started_at = now
-    sub.has_used_trial = True
-    sub.is_complimentary = False
-    sub.cancel_at_period_end = False
-    sub.current_period_start = now
-    sub.current_period_end = None  # trial expiry is computed from trial_started_at, not this
-    sub.price_ngn = 0  # trialing, not paying - must never count toward MRR
-    sub.provider = ''
-    sub.save()
+    with transaction.atomic():
+        # Lock the row so two simultaneous "start trial" calls (double-tap,
+        # two tabs) can't both pass the has_used_trial check below.
+        Subscription.objects.get_or_create(user=user)
+        sub = Subscription.objects.select_for_update().get(user=user)
+        sub.maybe_expire()
+
+        # A trial REPLACES the subscription's period fields (period end,
+        # billing cycle, locked-in price...). On an account that already has
+        # Pro that would wipe out time somebody PAID for - a customer with
+        # 11 months left who taps "start trial" would fall back to Free 30
+        # days later. (The docstring above always promised this was a
+        # no-op for Pro accounts; nothing enforced it.)
+        # has_used_trial is checked FIRST: an account whose own trial is
+        # still running has is_pro_active too, but the accurate answer there
+        # is "you've already used your trial", not "you already have Pro".
+        if sub.has_used_trial:
+            raise TrialAlreadyUsedError("You've already used your free trial.")
+
+        if sub.is_pro_active:
+            raise AlreadyOnProError('Your account already has Pro access.')
+
+        normalized_phone = normalize_phone(getattr(user, 'phone', ''))
+        if normalized_phone and Subscription.objects.filter(trial_phone=normalized_phone, has_used_trial=True).exclude(user=user).exists():
+            raise TrialAlreadyUsedError('This phone number has already been used to start a free trial on another account.')
+
+        now = timezone.now()
+        sub.plan = PRO
+        sub.status = SubscriptionStatus.TRIAL
+        sub.trial_started_at = now
+        sub.has_used_trial = True
+        sub.trial_phone = normalized_phone
+        sub.trial_started_ip = ip_address or None
+        sub.is_complimentary = False
+        sub.cancel_at_period_end = False
+        sub.current_period_start = now
+        sub.current_period_end = None  # trial expiry is computed from trial_started_at, not this
+        sub.billing_cycle = None
+        sub.price_ngn = 0  # trialing, not paying - must never count toward MRR
+        sub.provider = ''
+        sub.save()
     return sub
 
 
@@ -164,6 +215,20 @@ def require_invoicing(owner):
     )
 
 
+def require_customer_management(owner):
+    require_feature(
+        owner, 'customer_management', title='Unlock Customer Management',
+        description='Keep a record of your customers, sell to them on credit, and track who owes you and how much.',
+    )
+
+
+def require_cloud_backup(owner):
+    require_feature(
+        owner, 'cloud_backup', title='Unlock Cloud Backup',
+        description='Download a complete backup of your store - products, sales, customers, expenses and invoices - any time.',
+    )
+
+
 def require_ai_assistant(owner):
     require_feature(
         owner, 'ai_assistant', title='Unlock the AI Business Assistant',
@@ -193,6 +258,10 @@ def clamp_trend_days(owner, requested_days):
     for Free users while still making the Pro upsell obvious in the UI
     (see InsightsPage disabling the 30/90-day options for Free).
     """
+    # Bounded on both sides regardless of plan: a negative value produced an
+    # empty/garbled series, and a huge one (Pro has no plan cap) overflowed
+    # timedelta or made the view loop over millions of calendar days.
+    requested_days = max(1, min(int(requested_days), 366))
     max_days = plan_limit(get_effective_plan(owner), 'max_trend_history_days')
     if max_days is None:
         return requested_days

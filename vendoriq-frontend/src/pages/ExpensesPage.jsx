@@ -5,6 +5,7 @@ import api from '../lib/api'
 import { formatCurrency, formatDate, getErrorMessage } from '../lib/utils'
 import toast from 'react-hot-toast'
 import UpgradePrompt from '../components/billing/UpgradePrompt'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const CATEGORIES = [
   { value: 'RENT', label: 'Rent' },
@@ -38,6 +39,8 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false)
   const fetchDataRef = useRef(0)
   const [showForm, setShowForm] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
 
   const fetchData = async () => {
@@ -104,14 +107,22 @@ export default function ExpensesPage() {
     }
   }
 
-  const handleDelete = async (expense) => {
-    if (!confirm(`Delete "${expense.description}"?`)) return
+  const handleDelete = (expense) => {
+    setPendingDelete(expense)
+  }
+
+  const confirmDelete = async () => {
+    const expense = pendingDelete
+    setDeleting(true)
     try {
       await api.delete(`/stores/${activeStore.id}/expenses/${expense.id}/`)
       toast.success('Expense deleted')
       fetchData()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
     }
   }
 
@@ -123,30 +134,30 @@ export default function ExpensesPage() {
       </div>
       <form onSubmit={handleAdd} className="space-y-4">
         <div>
-          <label className="label">Description</label>
-          <input className="input" placeholder="e.g. Shop rent for July" value={form.description} onChange={set('description')} required />
+          <label htmlFor="exp-desc" className="label">Description</label>
+          <input id="exp-desc" className="input" placeholder="e.g. Shop rent for July" value={form.description} onChange={set('description')} required />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Category</label>
-            <select className="input" value={form.category} onChange={set('category')}>
+            <label htmlFor="exp-category" className="label">Category</label>
+            <select id="exp-category" className="input" value={form.category} onChange={set('category')}>
               {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
           <div>
-            <label className="label">Amount (₦)</label>
-            <input type="number" className="input font-mono" placeholder="0" min="0.01" step="0.01"
+            <label htmlFor="exp-amount" className="label">Amount (₦)</label>
+            <input id="exp-amount" type="number" className="input font-mono" placeholder="0" min="0.01" step="0.01"
               value={form.amount} onChange={set('amount')} required />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Date incurred</label>
-            <input type="date" className="input" value={form.incurred_on} onChange={set('incurred_on')} required />
+            <label htmlFor="exp-date" className="label">Date incurred</label>
+            <input id="exp-date" type="date" className="input" value={form.incurred_on} onChange={set('incurred_on')} required />
           </div>
           <div>
-            <label className="label">Frequency</label>
-            <select className="input" value={form.frequency} onChange={set('frequency')}>
+            <label htmlFor="exp-frequency" className="label">Frequency</label>
+            <select id="exp-frequency" className="input" value={form.frequency} onChange={set('frequency')}>
               <option value="ONE_OFF">One-off</option>
               <option value="DAILY">Daily</option>
               <option value="WEEKLY">Weekly</option>
@@ -244,6 +255,14 @@ export default function ExpensesPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete "${pendingDelete?.description}"?`}
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

@@ -191,7 +191,7 @@ export default function DashboardPage() {
           <p className="text-3xl font-bold font-mono tabular-nums">
             {hideProfit ? '••••••' : formatCurrency(current.netProfit)}
           </p>
-          <button onClick={toggleHideProfit} className="text-white/70 hover:text-white transition-colors p-1 flex-shrink-0" title={hideProfit ? 'Show profit figures' : 'Hide profit figures'}>
+          <button onClick={toggleHideProfit} aria-label={hideProfit ? 'Show profit figures' : 'Hide profit figures'} className="text-white/70 hover:text-white transition-colors p-1 flex-shrink-0" title={hideProfit ? 'Show profit figures' : 'Hide profit figures'}>
             {hideProfit ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>

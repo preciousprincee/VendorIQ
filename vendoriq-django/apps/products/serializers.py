@@ -1,7 +1,6 @@
 from rest_framework import serializers
+from .images import optimize_photo, PhotoError
 from .models import Product
-
-MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024  # keep in sync with the 5MB check in ProductsPage.jsx
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -19,14 +18,28 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Cost price (and anything derived from it) is what the owner paid
+        # suppliers - financial data cashiers don't get, same rule the list
+        # summary and sales views already apply.
+        if self.context.get('role') == 'CASHIER':
+            for key in ('cost_price', 'profit_margin', 'potential_profit'):
+                data.pop(key, None)
+        return data
+
     def validate_photo(self, value):
-        # The frontend already rejects anything over 5MB, but that's a UX
-        # nicety, not a security boundary - anyone calling the API directly
-        # can skip it. Enforcing it here is what actually protects disk/
-        # memory from a burst of large concurrent uploads.
-        if value and value.size > MAX_PHOTO_SIZE_BYTES:
-            raise serializers.ValidationError('Image must be under 5MB.')
-        return value
+        # One small photo per product. The web app already shrinks pictures
+        # before upload, but that is a convenience, not a boundary: anyone
+        # calling the API directly skips it. So the server enforces the size
+        # cap, checks it really is an image, and re-encodes it small (which
+        # also strips location metadata). See apps/products/images.py.
+        if not value:
+            return value
+        try:
+            return optimize_photo(value)
+        except PhotoError as exc:
+            raise serializers.ValidationError(str(exc))
 
     # None of cost_price/selling_price/quantity/low_stock_threshold had any
     # validation at all before this - neither here nor as a DB-level

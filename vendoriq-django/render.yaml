@@ -38,13 +38,27 @@ services:
       - key: DEBUG
         value: "False"
       - key: SECRET_KEY
-        generateValue: true
+        sync: false # paste the SAME long random value into vendoriq-api AND vendoriq-celery-worker (JWT/OTP signing must agree across both)
       - key: ALLOWED_HOSTS
         value: vendoriq-api.onrender.com
       - key: DATABASE_URL
         sync: false # paste in Supabase's pooler connection string (see README)
       - key: CORS_ALLOWED_ORIGINS
         value: https://your-app.vercel.app
+      - key: AUTH_ALLOW_BODY_REFRESH
+        value: "True" # lets sessions created before cookies were introduced migrate once; set to False 30 days after deploying
+      - key: FRONTEND_URL
+        value: https://your-app.vercel.app # used for links/logo in emails - keep identical on the worker below
+      - key: NUM_PROXIES
+        value: "2" # Vercel proxies /api to this server, so there are TWO proxies in front (Vercel, then Render). With 1, every visitor would share Vercel's IP and one rate-limit bucket. Use "1" only if the web app calls this API directly.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false # payments (checkout verify, webhooks, referral payouts) return 503 without this
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: TERMII_API_KEY
+        sync: false # SMS provider for phone verification codes - without it signup verification shows "temporarily unavailable"
+      - key: TERMII_SENDER_ID
+        value: N-Alert # must be an approved sender ID on your Termii account
       - key: GROQ_API_KEY
         sync: false
       - key: EMAIL_HOST
@@ -59,6 +73,10 @@ services:
         sync: false
       - key: SENTRY_DSN
         sync: false # optional - leave unset to just not use error monitoring
+      - key: POSTHOG_API_KEY
+        sync: false # optional - PostHog project key (phc_...), same as the frontend's VITE_POSTHOG_KEY. Server-side sign-up/verification/trial/purchase events; unset = off
+      - key: POSTHOG_HOST
+        value: https://us.i.posthog.com # EU project: https://eu.i.posthog.com
       # Shared cache across every gunicorn worker/dyno - this is what lets
       # DashboardView/TrendView/ProfitabilityView/NotificationsView stay cheap
       # under thousands of concurrent users instead of each request
@@ -99,9 +117,13 @@ services:
       - key: DEBUG
         value: "False"
       - key: SECRET_KEY
-        generateValue: true
+        sync: false # paste the SAME long random value into vendoriq-api AND vendoriq-celery-worker (JWT/OTP signing must agree across both)
       - key: DATABASE_URL
         sync: false # same Supabase pooler string as vendoriq-api
+      - key: FRONTEND_URL
+        value: https://your-app.vercel.app # the worker renders invoice emails - without this the logo URL was empty/localhost
+      - key: PAYSTACK_SECRET_KEY
+        sync: false # referral payouts run from tasks/sweeps that may execute on the worker
       - key: GROQ_API_KEY
         sync: false
       - key: EMAIL_HOST
@@ -112,6 +134,10 @@ services:
         sync: false
       - key: SENTRY_DSN
         sync: false # same DSN as vendoriq-api - catches background task failures (e.g. invoice emails) too, not just web request errors
+      - key: POSTHOG_API_KEY
+        sync: false # same key as vendoriq-api (purchases can be recorded from tasks that run on the worker)
+      - key: POSTHOG_HOST
+        value: https://us.i.posthog.com
       - key: REDIS_URL
         fromService:
           type: redis
