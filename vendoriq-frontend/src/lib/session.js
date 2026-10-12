@@ -1,3 +1,4 @@
+import { wipeOfflineCaches } from './offline/cleanup'
 /**
  * Where the sign-in state lives, and what a page script can and cannot see.
  *
@@ -40,6 +41,7 @@ export const clearLogoutPending = () => localStorage.removeItem(LOGOUT_PENDING)
 
 export function wipeLocalSession() {
   invalidatePendingRefresh()
+  wipeOfflineCaches()   // fire and forget: customer data cached for offline use must not outlive the session
   setAccessToken(null)
   dropLegacyTokens()
   ;['viq_user', 'viq_store'].forEach((k) => localStorage.removeItem(k))

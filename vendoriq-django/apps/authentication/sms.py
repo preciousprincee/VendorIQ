@@ -6,9 +6,8 @@ Backends (settings.SMS_BACKEND):
               choice for Nigerian numbers. Needs TERMII_API_KEY and, for
               branded delivery, an approved TERMII_SENDER_ID.
   'console' - prints the message to the server log instead of sending.
-              Local development ONLY: it is refused when DEBUG is off so a
-              production deploy that forgot the SMS keys fails loudly ("SMS
-              isn't configured") instead of silently "sending" nothing.
+              Local development ONLY (DEBUG=True). With DEBUG off it is refused
+              here, and settings.py refuses to even start without Termii keys.
 """
 import logging
 
@@ -17,7 +16,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-TERMII_URL = 'https://api.ng.termii.com/api/sms/send'
+def _termii_url():
+    # Termii shows the base URL to use on your dashboard (api.ng.termii.com is the default).
+    return f"{settings.TERMII_BASE_URL}/api/sms/send"
 
 
 class SMSError(Exception):
@@ -49,7 +50,7 @@ def send_sms(canonical_phone, message):
             raise SMSNotConfigured('SMS sending is not configured on this server.')
         try:
             response = requests.post(
-                TERMII_URL,
+                _termii_url(),
                 json={
                     'to': _international(canonical_phone),
                     'from': settings.TERMII_SENDER_ID,
@@ -69,7 +70,11 @@ def send_sms(canonical_phone, message):
             data = response.json()
         except ValueError:
             data = {}
-        if response.status_code != 200 or str(data.get('code', 'ok')).lower() != 'ok':
+        # Success = HTTP 200 AND Termii confirming it queued the message: either the older
+        # {"code": "ok"} or the current {"message_id": "...", "message": "Successfully Sent"}.
+        # A 200 carrying neither (e.g. an error body) must NOT count as sent.
+        accepted = str(data.get('code', '')).lower() == 'ok' or bool(data.get('message_id'))
+        if response.status_code != 200 or not accepted:
             logger.error('Termii returned %s: %s', response.status_code, response.text[:300])
             raise SMSError('Could not send the SMS. Please try again shortly.')
         return

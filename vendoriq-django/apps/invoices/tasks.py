@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def send_invoice_email_task(invoice_id, recipient, store_name):
     """
     Runs on the Celery worker, not the web request - a slow or unreachable
-    SMTP provider here costs worker time, not a gunicorn thread that a real
+    email provider here costs worker time, not a gunicorn thread that a real
     user is waiting on.
 
     In local dev with no REDIS_URL set, CELERY_TASK_ALWAYS_EAGER makes this
@@ -55,4 +55,4 @@ def send_invoice_email_task(invoice_id, recipient, store_name):
     email.attach_alternative(html_body, 'text/html')
     email.send(fail_silently=False)  # lets the exception propagate - logged below and visible in worker logs
 
-    logger.info('Invoice %s emailed to %s', invoice_id, recipient)
+    logger.info('Invoice %s emailed', invoice_id)

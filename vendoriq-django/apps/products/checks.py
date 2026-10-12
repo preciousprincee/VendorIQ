@@ -15,7 +15,7 @@ def photo_storage_is_persistent(app_configs, **kwargs):
     if backend.endswith('FileSystemStorage'):
         return [Warning(
             'Product photos are stored on the server\'s local disk, which is erased on every deploy.',
-            hint='Set MEDIA_S3_BUCKET (and the MEDIA_S3_* variables) to use S3-compatible object storage - see .env.example.',
+            hint='Set the R2_* variables (Cloudflare R2 object storage) - see .env.example.',
             id='products.W001',
         )]
     return []

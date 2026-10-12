@@ -202,8 +202,8 @@ class InvoiceSendView(StoreScopedAPIView):
             send_invoice_email_task.delay(str(invoice.id), recipient, store.name)
         except Exception:
             # In local dev (CELERY_TASK_ALWAYS_EAGER=True, no Redis configured)
-            # this runs synchronously, so an actual send failure (bad SMTP
-            # settings, etc) surfaces here immediately. In production this
+            # this runs synchronously, so an actual send failure (a bad email
+            # key or sender, etc) surfaces here immediately. In production this
             # only fires on a broker connection problem - the send itself
             # happens later on the worker and failures there are logged, not
             # returned to this request.

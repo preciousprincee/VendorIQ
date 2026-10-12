@@ -14,7 +14,6 @@ function CodeStep({ icon: Icon, title, description, done, sendPath, confirmPath,
   const [sending, setSending] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [cooldown, setCooldown] = useState(0)
-  const [debugCode, setDebugCode] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -35,7 +34,6 @@ function CodeStep({ icon: Icon, title, description, done, sendPath, confirmPath,
       setSent(true)
       setCode('')
       setCooldown(data.cooldown || 60)
-      setDebugCode(data.debugCode || '')
       toast.success('Code sent')
     } catch (err) {
       const retry = err.response?.data?.retryAfter
@@ -88,7 +86,6 @@ function CodeStep({ icon: Icon, title, description, done, sendPath, confirmPath,
                 maxLength={6} placeholder="------" value={code} aria-label="6-digit code"
                 onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               />
-              {debugCode && <p className="text-[11px] text-amber-500 text-center">Dev mode - your code is {debugCode}</p>}
               <button type="submit" disabled={confirming || code.length !== 6} className="btn-primary w-full">
                 {confirming ? 'Checking\u2026' : 'Verify'}
               </button>

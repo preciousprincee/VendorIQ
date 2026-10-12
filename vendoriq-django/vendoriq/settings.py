@@ -131,33 +131,36 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'vendoriq.wsgi.application'
 
-# --- Database -------------------------------------------------------------
-# Uses SQLite by default (local dev only). Set DATABASE_URL to point at Supabase
-# Postgres in every real deployment - SQLite cannot handle concurrent writes from
-# multiple users and must never be used in production.
+# --- Database: Neon (PostgreSQL) ---------------------------------------------
+# SQLite is the default for local development ONLY (no concurrent writers) - never use it in production.
 #
-# On Render, put Supabase's *Session pooler* or *Transaction pooler* connection
-# string (Project Settings -> Database -> Connection pooling, port 6543) in
-# DATABASE_URL, not the direct connection (port 5432). Supabase's direct
-# connection has a small hard limit on simultaneous connections; the pooler is
-# built to absorb many short-lived connections from an app server, which is
-# exactly the shape of traffic a Django + gunicorn deployment produces.
-DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+# Neon gives two connection strings (see vendoriq/infra.py for the full reasoning):
+#   DATABASE_URL         POOLED  (host has "-pooler")  -> the running app and the Celery worker
+#   DATABASE_URL_DIRECT  DIRECT  (no "-pooler")        -> `manage.py migrate` and other schema commands only
+# Add ?sslmode=require&channel_binding=require to both, as Neon recommends.
+from vendoriq.infra import pick_database_url, database_warnings, InfraConfigError, r2_storage_options, r2_public_host_warning
+
+DATABASE_URL, _DATABASE_KIND = pick_database_url(os.environ, sys.argv)
+for _w in database_warnings(os.environ, sys.argv):
+    print(f'[vendoriq] WARNING: {_w}', file=sys.stderr)
 
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', '0')),
+            # Neon's pooler absorbs connection churn, but reusing a connection for a minute still saves a TLS
+            # handshake on most requests. Schema commands (direct) stay at 0: one connection, then done.
+            conn_max_age=0 if _DATABASE_KIND == 'direct' else int(os.getenv('DB_CONN_MAX_AGE', '60')),
             ssl_require=os.getenv('DB_SSL_REQUIRE', 'True') == 'True',
         )
     }
-    # Supabase's pooler runs in "transaction" mode by default, which does not
-    # support server-side cursors/prepared statements the way a direct
-    # connection does. DISABLE_SERVER_SIDE_CURSORS avoids subtle, hard-to-
-    # reproduce errors under load when using the pooler. Harmless if you're
-    # using the direct connection instead.
+    # PgBouncer (transaction mode) cannot keep server-side cursors across statements.
     DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+    # Neon suspends idle databases and the pooler closes idle connections: before reusing a persistent
+    # connection Django checks it is alive, and quietly reconnects instead of failing one request.
+    DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+    # A suspended Neon compute needs a moment to wake up on the first connection.
+    DATABASES['default'].setdefault('OPTIONS', {}).setdefault('connect_timeout', int(os.getenv('DB_CONNECT_TIMEOUT', '15')))
 else:
     DATABASES = {
         'default': {
@@ -248,34 +251,34 @@ STORAGES = {
     },
 }
 
-# --- Product photos: S3-compatible object storage (Supabase Storage, AWS S3,
-# Cloudflare R2...). Set MEDIA_S3_BUCKET to switch it on; leave it empty for
-# local development, where photos go to ./media. See .env.example.
-MEDIA_S3_BUCKET = os.getenv('MEDIA_S3_BUCKET', '')
-if MEDIA_S3_BUCKET:
+# --- Product photos: Cloudflare R2 (S3-compatible object storage) -------------
+# Render's disk is erased on every deploy, so production photos MUST live in R2 (see vendoriq/infra.py for the
+# variables). Local development (DEBUG=True) with no R2_* variables keeps photos in ./media.
+try:
+    _R2_OPTIONS = r2_storage_options(os.environ)
+except InfraConfigError as _exc:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(str(_exc))
+
+if _R2_OPTIONS:
     import importlib.util
     if importlib.util.find_spec('storages') is None:
         from django.core.exceptions import ImproperlyConfigured
-        raise ImproperlyConfigured('MEDIA_S3_BUCKET is set but django-storages is not installed (pip install "django-storages[s3]").')
-    STORAGES['default'] = {
-        'BACKEND': 'storages.backends.s3.S3Storage',
-        'OPTIONS': {
-            'bucket_name': MEDIA_S3_BUCKET,
-            'endpoint_url': os.getenv('MEDIA_S3_ENDPOINT_URL') or None,
-            'access_key': os.getenv('MEDIA_S3_ACCESS_KEY_ID', ''),
-            'secret_key': os.getenv('MEDIA_S3_SECRET_ACCESS_KEY', ''),
-            'region_name': os.getenv('MEDIA_S3_REGION', 'auto'),
-            # Public URL base, e.g. <project>.supabase.co/storage/v1/object/public/<bucket>
-            'custom_domain': os.getenv('MEDIA_S3_CUSTOM_DOMAIN') or None,
-            'addressing_style': 'path',
-            'signature_version': 's3v4',
-            'querystring_auth': False,      # photos are public product pictures
-            'default_acl': None,
-            'file_overwrite': False,
-            # File names are random, so a stored photo never changes: cache it forever.
-            'object_parameters': {'CacheControl': 'public, max-age=31536000, immutable'},
-        },
-    }
+        raise ImproperlyConfigured('R2 is configured but django-storages is not installed (pip install "django-storages[s3]").')
+    STORAGES['default'] = {'BACKEND': 'storages.backends.s3.S3Storage', 'OPTIONS': _R2_OPTIONS}
+    # Recent boto3 versions add checksum headers that R2 does not accept; only send them when an operation requires it.
+    os.environ.setdefault('AWS_REQUEST_CHECKSUM_CALCULATION', 'when_required')
+    os.environ.setdefault('AWS_RESPONSE_CHECKSUM_VALIDATION', 'when_required')
+    _r2_warning = r2_public_host_warning(os.environ)
+    if _r2_warning and not DEBUG:
+        print(f'[vendoriq] WARNING: {_r2_warning}', file=sys.stderr)
+elif not DEBUG and not _RUNNING_TESTS and os.getenv('ALLOW_LOCAL_MEDIA', '').strip().lower() not in ('1', 'true', 'yes'):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        'Product photos need Cloudflare R2 in production (the server disk is erased on every deploy). '
+        'Set R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_PUBLIC_URL '
+        '(or ALLOW_LOCAL_MEDIA=true to knowingly accept losing photos on every deploy).'
+    )
 
 # Hard cap on an incoming product photo. The web app shrinks pictures first (a
 # phone photo becomes ~100-300 KB), so this only ever stops oversized direct API uploads.
@@ -486,20 +489,18 @@ if PAYSTACK_SECRET_KEY and PAYSTACK_PUBLIC_KEY and not _RUNNING_TESTS:
 # Upgrade and get Pro for free" instead of a clear "payments unavailable".
 ALLOW_MOCK_UPGRADE = os.getenv('ALLOW_MOCK_UPGRADE', '').strip().lower() in ('1', 'true', 'yes')
 
-# Email (used to send invoices to customers).
-# If EMAIL_HOST is not set, emails print to the console instead of failing,
-# so "Send invoice" still works out of the box in local development.
-if os.getenv('EMAIL_HOST'):
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = os.getenv('EMAIL_HOST')
-    EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+# Email: Resend (https://resend.com), over its HTTPS API - see vendoriq/email_backend.py.
+# Used for verification codes and for invoices sent to customers.
+# With no RESEND_API_KEY, emails print to the server console (local development ONLY: with DEBUG off the
+# app refuses to start without a key, see the live-mode check below).
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
+if RESEND_API_KEY:
+    EMAIL_BACKEND = 'vendoriq.email_backend.ResendEmailBackend'
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@vendoriq.app')
-# Verification codes are sent inside the request, so a dead SMTP server must
+# The sender must be on a domain you have VERIFIED in Resend, e.g.  VendorIQ <no-reply@yourdomain.com>
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', '').strip() or 'no-reply@vendoriq.app'
+# Verification codes are sent inside the request, so an unreachable email service must
 # fail fast instead of hanging a worker.
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
 
@@ -507,10 +508,29 @@ EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
 # Termii is the default provider for Nigerian numbers. With no API key the
 # 'console' backend just logs the message (development only - it is refused
 # when DEBUG is off, see apps/authentication/sms.py).
-TERMII_API_KEY = os.getenv('TERMII_API_KEY', '')
-TERMII_SENDER_ID = os.getenv('TERMII_SENDER_ID', 'N-Alert')
+TERMII_API_KEY = os.getenv('TERMII_API_KEY', '').strip()
+TERMII_BASE_URL = (os.getenv('TERMII_BASE_URL', '').strip() or 'https://api.ng.termii.com').rstrip('/')
+TERMII_SENDER_ID = os.getenv('TERMII_SENDER_ID', 'N-Alert').strip()
 TERMII_CHANNEL = os.getenv('TERMII_CHANNEL', 'dnd')  # 'dnd' also reaches numbers with promo-SMS blocking; 'generic' is cheaper
 SMS_BACKEND = os.getenv('SMS_BACKEND') or ('termii' if TERMII_API_KEY else 'console')
+
+# LIVE MODE: with DEBUG off, verification codes must go out for real. Without this check a deploy that
+# forgot the email settings would quietly "send" every verification email to the server log (nobody
+# could ever verify), so refuse to start and say exactly what is missing.
+if not DEBUG and not _RUNNING_TESTS:
+    _missing = [name for name, value in (
+        ('RESEND_API_KEY', RESEND_API_KEY),
+        ('DEFAULT_FROM_EMAIL (a sender on a domain verified in Resend)', os.getenv('DEFAULT_FROM_EMAIL', '').strip()),
+        ('TERMII_API_KEY', TERMII_API_KEY),
+    ) if not value]
+    if SMS_BACKEND != 'termii':
+        _missing.append('SMS_BACKEND (must be termii, or unset)')
+    if _missing:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'Live mode needs real email and SMS delivery for verification codes. Missing: ' + ', '.join(_missing) +
+            '. Set them in the Render environment (API and worker).'
+        )
 
 # --- Caching -----------------------------------------------------------------
 # Cuts repeated database aggregation (dashboard/insights) under concurrent load.
@@ -549,7 +569,7 @@ else:
 
 # --- Background tasks (Celery) ------------------------------------------------
 # Sending invoice emails synchronously inside the request tied up a gunicorn
-# worker/thread for however long the SMTP round-trip took - a slow email
+# worker/thread for however long the email request took - a slow email
 # provider directly ate into the app's request-handling capacity. This
 # offloads that (and any future slow, non-interactive work) to a separate
 # worker process instead.

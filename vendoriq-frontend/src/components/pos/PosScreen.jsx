@@ -8,6 +8,7 @@ import { useOffline } from '../../context/OfflineContext'
 import { useCatalog } from '../../hooks/useCatalog'
 import { useFeatureAccess } from '../../hooks/useFeatureAccess'
 import BarcodeScanner from '../scanner/BarcodeScanner'
+import { productsForBarcode, sameBarcode } from '../../lib/barcode'
 import ReceiptModal from './ReceiptModal'
 import CustomerPicker from './CustomerPicker'
 import { computeTotals, computePayment, parseMoney, toMoney, newId, METHODS } from '../../lib/offline/money'
@@ -59,7 +60,7 @@ export default function PosScreen({ onExit }) {
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase()
     return products
-      .filter((p) => p.quantity > 0 && (!q || p.name.toLowerCase().includes(q) || (p.barcode || '') === search.trim()))
+      .filter((p) => p.quantity > 0 && (!q || p.name.toLowerCase().includes(q) || sameBarcode(p.barcode, search)))
       .slice(0, SHOWN_PRODUCTS)
   }, [products, search])
 
@@ -95,13 +96,36 @@ export default function PosScreen({ onExit }) {
     setCart((c) => c.map((i) => (i.productId === productId ? { ...i, quantity: qty } : i)))
   }
 
-  const handleScan = (code) => {
-    const product = products.find((p) => p.barcode === code)
-    if (!product) { toast.error('No product matches that barcode'); return }
-    if (product.quantity <= 0) { toast.error(`${product.name} is out of stock`); return }
+  // Adds the product with this barcode. Used by the camera and by hardware scanners (which "type" the code
+  // and press Enter). Returns true when something was added. A fixed toast id means repeated misses
+  // replace each other instead of stacking up.
+  const addByBarcode = (code) => {
+    const matches = productsForBarcode(products, code)
+    if (matches.length === 0) { toast.error('No product matches that barcode', { id: 'scan' }); return false }
+    if (matches.length > 1) {
+      // Two products share this barcode (old data): don't guess - the wrong item would be sold.
+      setSearch(String(code).trim())
+      toast.error('More than one product has this barcode - pick the right one from the list', { id: 'scan' })
+      return false
+    }
+    const product = matches[0]
+    if (product.quantity <= 0) { toast.error(`${product.name} is out of stock`, { id: 'scan' }); return false }
+    const inCart = cart.find((i) => i.productId === product.id)?.quantity || 0
+    if (inCart >= product.quantity) { toast.error(`Only ${product.quantity} in stock`, { id: 'scan' }); return false }
     addToCart(product)
-    toast.success(`${product.name} added`)
-    setScanning(false)
+    toast.success(`${product.name} added`, { id: 'scan' })
+    return true
+  }
+
+  const handleScan = (code) => {
+    if (addByBarcode(code)) setScanning(false)
+  }
+
+  // USB / Bluetooth barcode scanners type the digits into the focused box and press Enter.
+  const handleSearchKeyDown = (e) => {
+    if (e.key !== 'Enter' || !search.trim()) return
+    e.preventDefault()
+    if (productsForBarcode(products, search).length > 0 && addByBarcode(search)) setSearch('')
   }
 
   const openPayment = () => {
@@ -186,7 +210,7 @@ export default function PosScreen({ onExit }) {
             <div className="flex gap-2 mb-3">
               <div className="relative flex-1">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-dim" />
-                <input className="input pl-9" placeholder="Search or type a barcode..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input pl-9" placeholder="Search or type a barcode..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={handleSearchKeyDown} />
               </div>
               <button type="button" onClick={() => setScanning((v) => !v)} aria-label={scanning ? 'Stop barcode scan' : 'Scan barcode'}
                 className={`flex-shrink-0 px-3 rounded-xl border transition-colors ${scanning ? 'border-brand-500 text-brand-500' : 'border-navy-600 text-slate-muted hover:text-slate-text hover:border-navy-500'}`}>

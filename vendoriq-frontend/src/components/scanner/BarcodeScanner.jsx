@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { dedupeScans } from '../../lib/barcode'
 
 /**
  * Live camera barcode scanner.
@@ -82,8 +83,12 @@ export default function BarcodeScanner({ onDetected, onError, className = '' }) 
         hints.set(DecodeHintType.TRY_HARDER, true)
         const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 })
 
+        // The reader decodes ~8 times a second, so a code that stays in view would be reported over and
+        // over (one "no match" message per frame, or an item added again and again). Report each code once,
+        // and only report it again after 1.5 s.
+        const report = dedupeScans((text) => detectedRef.current?.(text))
         const onResult = (result) => {
-          if (result && !cancelled) detectedRef.current?.(result.getText())
+          if (result && !cancelled) report(result.getText())
         }
 
         try {

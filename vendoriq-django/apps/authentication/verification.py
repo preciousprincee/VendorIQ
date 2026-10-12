@@ -150,7 +150,7 @@ def check_code(user, channel, target, code):
 # --- delivery ---------------------------------------------------------------
 
 def send_email_code(user):
-    """Emails a code to user.email. Returns the plaintext code ONLY so DEBUG builds can surface it."""
+    """Emails a code to user.email. Raises VerificationError if it could not be delivered."""
     code, row = issue_code(user, VerificationCode.Channel.EMAIL, user.email)
     text = (
         f'Hi {user.name},\n\nYour VendorIQ verification code is {code}.\n'
@@ -169,13 +169,13 @@ def send_email_code(user):
         message.send(fail_silently=False)
     except Exception:
         row.delete()  # nothing was delivered - don't make them wait out the cooldown
-        logger.error('Verification email to %s failed', user.email, exc_info=True)
+        logger.error('Verification email for user %s failed', user.pk, exc_info=True)
         raise VerificationError('We could not send the email right now. Please try again shortly.', 502)
     return code
 
 
 def send_phone_code(user):
-    """Texts a code to user.phone (canonical form). Returns the plaintext code ONLY so DEBUG builds can surface it."""
+    """Texts a code to user.phone (canonical form). Raises VerificationError if it could not be delivered."""
     code, row = issue_code(user, VerificationCode.Channel.PHONE, user.phone)
     try:
         sms.send_sms(user.phone, f'Your VendorIQ verification code is {code}. It expires in 10 minutes.')

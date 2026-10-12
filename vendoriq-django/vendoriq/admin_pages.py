@@ -123,7 +123,7 @@ def system_health_view(request):
     ai_config = get_ai_config()
     ai_configured = bool(ai_config['api_key']) and bool(ai_config['base_url'])
     sentry_configured = bool(getattr(settings, 'SENTRY_DSN', ''))
-    email_configured = getattr(settings, 'EMAIL_BACKEND', '').endswith('smtp.EmailBackend')
+    email_configured = getattr(settings, 'EMAIL_BACKEND', '').endswith('ResendEmailBackend')
     paystack_configured = bool(getattr(settings, 'PAYSTACK_SECRET_KEY', '')) and bool(getattr(settings, 'PAYSTACK_PUBLIC_KEY', ''))
 
     config_checks = [
@@ -134,7 +134,7 @@ def system_health_view(request):
         },
         {
             'label': 'Payments (Paystack)', 'ok': paystack_configured,
-            'sub': 'Configured' if paystack_configured else 'PAYSTACK_SECRET_KEY / PAYSTACK_PUBLIC_KEY not set',
+            'sub': 'Configured (test mode ready)' if paystack_configured else 'PAYSTACK_SECRET_KEY / PAYSTACK_PUBLIC_KEY not set',
             'hint': '' if paystack_configured else 'Until both keys are set, customers cannot upgrade (checkout shows "Payments are not available"). The free demo upgrade only works if ALLOW_MOCK_UPGRADE=true, which should never be set in production.',
         },
         {
@@ -142,8 +142,9 @@ def system_health_view(request):
             'sub': 'Configured' if sentry_configured else 'Optional - SENTRY_DSN not set',
         },
         {
-            'label': 'Outbound email', 'ok': email_configured, 'optional': True,
-            'sub': 'SMTP configured' if email_configured else 'Printing to console (EMAIL_HOST not set)',
+            'label': 'Outbound email (Resend)', 'ok': email_configured, 'optional': False,
+            'sub': 'Resend configured' if email_configured else 'Printing to console (RESEND_API_KEY not set)',
+            'hint': '' if email_configured else 'Verification codes and invoices cannot be delivered. Set RESEND_API_KEY and DEFAULT_FROM_EMAIL (a sender on a domain verified in Resend).',
         },
     ]
 

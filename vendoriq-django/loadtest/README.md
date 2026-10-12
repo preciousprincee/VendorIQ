@@ -63,7 +63,7 @@ locust -f locustfile.py --host https://vendoriq-api.onrender.com \
   reading the code.
 - **Failure %** - anything above ~0-1% under sustained load means something
   is falling over (DB connection limit, Redis, gunicorn workers maxed out).
-- Watch your Render/Supabase/Redis dashboards during the run - CPU, memory,
+- Watch your Render/Neon/Redis dashboards during the run - CPU, memory,
   and DB connection count will tell you which piece hits its ceiling first.
 - If you hit the default throttle (`THROTTLE_RATE_USER=300/min` per user),
   Locust will show 429s - that's the rate limiter working as designed, not a
@@ -71,4 +71,4 @@ locust -f locustfile.py --host https://vendoriq-api.onrender.com \
 
 If the numbers aren't good enough yet, the usual next steps in order of
 impact: bump the Render web service plan/`WEB_CONCURRENCY`, bump the Redis
-plan, bump the Supabase pooler's connection limit.
+plan, upgrade the Neon compute size (more connections, more CPU).

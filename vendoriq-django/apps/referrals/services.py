@@ -29,27 +29,27 @@ def record_referral_if_applicable(new_user, referral_code):
     if not referral_code:
         return
     if not get_referral_settings()['enabled']:
-        logger.info('Referral code %r supplied for %s but the referral program is currently disabled.', referral_code, new_user.email)
+        logger.info('Referral code supplied for user %s but the referral program is currently disabled.', new_user.pk)
         return
     code = normalize_phone(referral_code)
     if not code:
-        logger.info('Referral code %r supplied for %s is not a valid phone number - no referral recorded.', referral_code, new_user.email)
+        logger.info('Referral code supplied for user %s is not a valid phone number - no referral recorded.', new_user.pk)
         return
 
     from apps.authentication.models import User
     referrer = User.objects.filter(referral_code=code).first()
     if referrer is None:
-        logger.info('Referral code %r supplied for %s does not match any user - no referral recorded.', code, new_user.email)
+        logger.info('Referral code supplied for user %s does not match any user - no referral recorded.', new_user.pk)
         return
     if referrer.id == new_user.id:
-        logger.info('User %s attempted to self-refer with their own code - ignored.', new_user.email)
+        logger.info('User %s attempted to self-refer with their own code - ignored.', new_user.pk)
         return
 
     _referral, created = Referral.objects.get_or_create(referred_user=new_user, defaults={'referrer': referrer, 'code_used': code})
     if created:
-        logger.info('Referral recorded: %s referred %s (code %s).', referrer.email, new_user.email, code)
+        logger.info('Referral recorded: user %s referred user %s.', referrer.pk, new_user.pk)
     else:
-        logger.info('User %s already has a referral attribution - code %r from this signup was ignored.', new_user.email, code)
+        logger.info('User %s already has a referral attribution - the code from this signup was ignored.', new_user.pk)
 
 
 def process_referral_commission(purchase, is_first_real_purchase):

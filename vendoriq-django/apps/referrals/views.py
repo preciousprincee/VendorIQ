@@ -43,6 +43,12 @@ def get_cached_banks():
     return banks
 
 
+def mask_email(email):
+    """jane.doe@gmail.com -> j***@gmail.com"""
+    local, _, domain = (email or '').partition('@')
+    return f'{local[:1]}***@{domain}' if domain else ''
+
+
 class ReferralStatusView(APIView):
     """
     GET /api/referrals/status/ - public, unauthenticated. Exists solely so
@@ -78,8 +84,10 @@ class ReferralSummaryView(APIView):
             commissions = [c for c in r.commissions.all() if c.status != ReferralCommission.Status.REVERSED]
             live_commission = commissions[0] if commissions else None
             referred.append({
+                'id': r.id,
                 'name': r.referred_user.name,
-                'email': r.referred_user.email,
+                # Masked: the referrer is a different person, and a first name is enough to recognise a friend.
+                'email': mask_email(r.referred_user.email),
                 'joinedAt': r.created_at,
                 # The referral program pays once, from the referred user's
                 # FIRST successful paid subscription - not a recurring

@@ -69,7 +69,7 @@ class ProductListCreateView(StoreScopedAPIView):
         })
 
     def post(self, request, store_id):
-        serializer = ProductSerializer(data=request.data, context={'role': self.role})
+        serializer = ProductSerializer(data=request.data, context={'role': self.role, 'store': self.store})
         if not serializer.is_valid():
             return Response({'error': next(iter(serializer.errors.values()))[0]}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
@@ -110,7 +110,7 @@ class ProductDetailView(StoreScopedAPIView):
         # or rewrite the cost the profit figures are computed from.
         if self.role == 'CASHIER' and ('cost_price' in request.data or 'selling_price' in request.data):
             return Response({'error': 'You do not have permission to change prices.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = ProductSerializer(product, data=request.data, partial=True, context={'role': self.role})
+        serializer = ProductSerializer(product, data=request.data, partial=True, context={'role': self.role, 'store': self.store})
         if serializer.is_valid():
             serializer.save()
             invalidate_store_insights(store_id)

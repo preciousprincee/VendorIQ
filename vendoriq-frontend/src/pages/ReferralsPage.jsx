@@ -101,7 +101,7 @@ function BankAccountForm({ onSaved }) {
         <input id="payout-account-number" className="input font-mono" placeholder="0123456789" maxLength={10}
           value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} />
       </div>
-      {resolving && <p className="text-xs text-slate-dim">Verifying account…</p>}
+      {resolving && <p className="text-xs text-slate-dim">Verifying account\u2026</p>}
       {resolvedName && (
         <p className="text-xs text-brand-500">Pays out to: <span className="font-medium">{resolvedName}</span></p>
       )}
@@ -152,7 +152,7 @@ export default function ReferralsPage() {
   }
 
   if (loading) {
-    return <div className="p-5 lg:p-6 max-w-xl lg:mx-auto animate-fade-in"><p className="text-sm text-slate-dim">Loading…</p></div>
+    return <div className="p-5 lg:p-6 max-w-xl lg:mx-auto animate-fade-in"><p className="text-sm text-slate-dim">Loading\u2026</p></div>
   }
 
   if (summary.needsPhone) {
@@ -198,13 +198,13 @@ export default function ReferralsPage() {
         {!summary.enabled && (
           <div className="bg-saffron-500/10 border border-saffron-500/30 rounded-xl px-3 py-2.5 mb-4">
             <p className="text-xs text-saffron-500">
-              This program is temporarily paused — new signups can't use a referral code right now.
+              This program is temporarily paused \u2014 new signups can't use a referral code right now.
               Anything you've already earned below is unaffected and still gets paid out.
             </p>
           </div>
         )}
 
-        <p className="text-xs text-slate-dim mb-4">Share your code or link. When someone signs up and upgrades to Pro, you start earning — paid straight to your bank account.</p>
+        <p className="text-xs text-slate-dim mb-4">Share your code or link. When someone signs up and upgrades to Pro, you start earning \u2014 paid straight to your bank account.</p>
 
         <div className="flex items-center gap-2 mb-3">
           <div className="flex-1 bg-navy-900/40 border border-navy-700 rounded-xl px-3 py-2.5 font-mono text-sm text-slate-text tracking-wider text-center">
@@ -244,7 +244,7 @@ export default function ReferralsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-text">{summary.payoutAccount.bankName}</p>
-              <p className="text-xs text-slate-dim font-mono">••••••{summary.payoutAccount.accountNumber?.slice(-4)} · {summary.payoutAccount.accountName}</p>
+              <p className="text-xs text-slate-dim font-mono">\u2022\u2022\u2022\u2022\u2022\u2022{summary.payoutAccount.accountNumber?.slice(-4)} \u00b7 {summary.payoutAccount.accountName}</p>
             </div>
             <button onClick={() => setEditingBank(true)} className="text-xs text-brand-500 hover:underline flex-shrink-0">Change</button>
           </div>
@@ -257,11 +257,11 @@ export default function ReferralsPage() {
         <div className="card divide-y divide-navy-700 mb-5">
           <p className="text-sm font-semibold text-slate-text px-4 pt-4 pb-2">People you've referred</p>
           {summary.referredUsers.map((r) => (
-            <div key={r.email} className="px-4 py-3 flex items-center justify-between gap-3">
+            <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm text-slate-text truncate">{r.name}</p>
                 <p className="text-xs text-slate-dim">
-                  Joined {formatDate(r.joinedAt)} · {r.commissionStatus ? (COMMISSION_STATUS_LABEL[r.commissionStatus] || r.commissionStatus) : 'No paid subscription yet'}
+                  Joined {formatDate(r.joinedAt)} \u00b7 {r.commissionStatus ? (COMMISSION_STATUS_LABEL[r.commissionStatus] || r.commissionStatus) : 'No paid subscription yet'}
                 </p>
               </div>
               <p className="font-mono text-sm text-brand-500 flex-shrink-0">{formatCurrency(r.totalEarnedNgn)}</p>

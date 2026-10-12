@@ -171,7 +171,6 @@ export default function StaffPage() {
                     <div>
                       <p className="text-sm font-medium text-slate-text">{member.user.name}</p>
                       <p className="text-xs text-slate-dim">{member.user.email}</p>
-                      {member.user.phone && <p className="text-xs text-slate-dim">{member.user.phone}</p>}
                       <p className="text-xs text-slate-dim mt-0.5">Added {formatDate(member.created_at)}</p>
                     </div>
                   </div>

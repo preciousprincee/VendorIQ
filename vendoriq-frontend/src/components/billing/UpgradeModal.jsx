@@ -266,7 +266,8 @@ export default function UpgradeModal({ open, context, subscription, viewerIsOwne
                   </button>
                 )}
                 <p className="text-[11px] text-slate-dim text-center">
-                  You'll be taken to Paystack's secure checkout to pay.
+                  You'll be taken to Paystack's secure checkout to pay. In test mode, use Paystack's test card
+                  (4084 0840 8408 4081, any future date/CVV) to simulate a successful payment.
                 </p>
               </>
             ) : (

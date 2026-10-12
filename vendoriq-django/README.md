@@ -137,20 +137,58 @@ GET    /api/stores/{id}/profitability/            (owner/manager only) - net pro
 POST   /api/ai/chat/                              (owner/manager only)
 ```
 
-## Deploying to production (Render + Supabase)
+## Deploying to production (Render + Neon + Cloudflare R2)
 
 This is set up to deploy straight from `render.yaml` as a Render Blueprint.
 
-### 1. Supabase (database)
-1. Create a project at supabase.com.
-2. Go to **Project Settings -> Database -> Connection pooling**.
-3. Copy the **Transaction** mode connection string (port `6543`), not the direct
-   connection (port `5432`). The pooler is built for many short-lived
-   connections from an app server under load; the direct connection has a low
-   hard limit on simultaneous connections and will run out fast with more than
-   a couple of gunicorn workers.
+### 1. Neon (database)
+1. Create a project at neon.com (pick the region closest to your Render region).
+2. Click **Connect** on the project dashboard. Neon shows two connection strings
+   (the **Connection pooling** switch flips between them):
+   - **Pooled** - the host contains `-pooler`. This is `DATABASE_URL`: the running
+     app and the Celery worker use it. Neon's PgBouncer absorbs the many short
+     connections that gunicorn workers create.
+   - **Direct** - no `-pooler`. This is `DATABASE_URL_DIRECT`: only
+     `manage.py migrate` (the Render build step) uses it, because schema changes
+     and `pg_dump`/`pg_restore` don't work through transaction pooling.
+3. Add `?sslmode=require&channel_binding=require` to both strings if it isn't there.
+4. Moving data from another Postgres (e.g. Supabase): use the DIRECT string of both
+   databases -
+   `pg_dump --no-owner --no-acl -Fc "<old direct url>" > vendoriq.dump`, then
+   `pg_restore --no-owner --no-acl -d "<neon direct url>" vendoriq.dump`. For a brand new
+   database just let the build run `migrate`.
+5. Neon suspends an idle database; the first request after a quiet spell can take a
+   second or two. `/api/health/` deliberately does not touch the database, so
+   Render's health checks don't keep it awake. On a paid Neon plan you can disable
+   suspension if that delay matters.
 
-### 2. Render (backend)
+### 2. Cloudflare R2 (product photos)
+1. Cloudflare dashboard -> **R2** -> create a bucket (e.g. `vendoriq-photos`).
+2. Bucket -> **Settings -> Public access -> Custom Domains**: connect a domain such as
+   `photos.yourdomain.com`. (The `r2.dev` address is development-only and rate-limited.)
+3. **R2 -> Manage API tokens** -> create a token with **Object Read & Write**, limited to
+   this bucket. Copy the Access Key ID and Secret Access Key.
+4. Set `R2_ACCOUNT_ID` (the 32-character hex ID on the R2 overview page), `R2_BUCKET`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_PUBLIC_URL` (the custom domain) on
+   **both** Render services. With `DEBUG=False` the app refuses to start without them,
+   because the server disk is erased on every deploy.
+5. Existing photos? Copy them in under the same names:
+   `python manage.py copy_media --from-url <old public url>` (or `--from-dir ./media`).
+   Add `--dry-run` first. Safe to re-run.
+
+### 2a. Resend (email)
+1. At resend.com/domains add your domain and publish the DNS records until it shows **Verified**.
+2. At resend.com/api-keys create an API key (`re_...`; "Sending access" is enough).
+3. Set `RESEND_API_KEY` and `DEFAULT_FROM_EMAIL` (e.g. `VendorIQ <no-reply@yourdomain.com>`, on the verified domain)
+   on **both** Render services. With `DEBUG=False` the app refuses to start without them.
+
+### 2b. Prove the keys work
+In the Render shell of `vendoriq-api`:
+`python manage.py check_live_config --send-test-email you@yourdomain.com --send-test-sms 080XXXXXXXX`
+It connects to Neon, writes/reads/deletes a test file in R2 through the public address,
+checks your Resend key and sender domain, asks Termii and Paystack for their balances, and prints what to fix.
+
+### 3. Render (backend)
 1. New -> Blueprint, point it at this repo (`render.yaml` is auto-detected).
    This provisions three services: the web API, a Celery worker (background
    tasks - currently just invoice emails), and Redis (shared cache + task
@@ -158,23 +196,21 @@ This is set up to deploy straight from `render.yaml` as a Render Blueprint.
 2. Set these environment variables in the Render dashboard **on both the
    `vendoriq-api` and `vendoriq-celery-worker` services** (the worker needs
    its own copies since it also talks to the database and sends the actual
-   emails):
-   - `DATABASE_URL` - the Supabase pooler string from step 1
-   - `GROQ_API_KEY`, and `EMAIL_HOST`/`EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD` if you want the AI assistant and invoice emails to work
-   `CORS_ALLOWED_ORIGINS` only needs setting on `vendoriq-api` (the worker doesn't serve HTTP):
-   - `CORS_ALLOWED_ORIGINS` - your Vercel URL, e.g. `https://vendoriq.vercel.app`
+   emails): `DATABASE_URL` (Neon pooled), the five `R2_*` values, `SECRET_KEY`
+   (the same on both), the email and SMS settings, `PAYSTACK_*`.
+   `DATABASE_URL_DIRECT` is needed on `vendoriq-api` (its build step migrates).
+   `CORS_ALLOWED_ORIGINS` only needs setting on `vendoriq-api` (the worker doesn't serve HTTP).
 3. Deploy. `render.yaml` handles `pip install`, migrations, `collectstatic`,
    and starts gunicorn with multiple worker processes and threads so one slow
    request (an AI call, an outbound email) doesn't block other users.
 4. Bump the `plan` in `render.yaml` (Starter -> Standard/Pro) as real traffic
    grows - more CPU means you can safely raise `WEB_CONCURRENCY`.
 
-### 3. Vercel (frontend)
+### 4. Vercel (frontend)
 1. Import the `vendoriq-frontend` folder as a Vercel project.
-2. In Project Settings -> Environment Variables, set `VITE_API_URL` to your
-   Render backend's URL with `/api` on the end, e.g.
-   `https://vendoriq-api.onrender.com/api`. Without this, the deployed
-   frontend has no way to reach the backend (they're on different domains).
+2. Leave `VITE_API_URL` **unset**. `vercel.json` proxies `/api` to Render, so the browser only ever talks to
+   your Vercel domain and the HttpOnly sign-in cookie works. Set the Render URL in `vercel.json`'s `/api`
+   rewrite. (Setting `VITE_API_URL` makes the app call Render directly, which breaks the cookie session.)
 3. Deploy. `vercel.json` already handles SPA routing.
 
 ### Scaling notes

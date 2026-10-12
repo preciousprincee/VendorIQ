@@ -1,4 +1,3 @@
-from django.conf import settings
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,7 +9,6 @@ from vendoriq.throttles import VerificationSendThrottle, VerificationConfirmThro
 from .models import VerificationCode
 from .phone import normalize_phone
 from .serializers import UserSerializer, UpdateProfileSerializer, PHONE_ERROR, phone_in_use
-from .sms import sms_backend_name
 from .verification import (
     VerificationError, check_code, claim_phone, send_email_code, send_phone_code,
     RESEND_COOLDOWN_SECONDS,
@@ -38,15 +36,11 @@ class SendEmailCodeView(APIView):
         if user.email_verified:
             return Response({'ok': True, 'alreadyVerified': True, **_user_payload(user)})
         try:
-            code = send_email_code(user)
+            send_email_code(user)
         except VerificationError as exc:
             return _error(exc)
-        body = {'ok': True, 'cooldown': RESEND_COOLDOWN_SECONDS}
-        # Local development convenience ONLY: with no SMTP configured the
-        # email goes to the console, so echo the code to the UI as well.
-        if settings.DEBUG and not getattr(settings, 'EMAIL_HOST', ''):
-            body['debugCode'] = code
-        return Response(body)
+        # The code is NEVER returned to the browser - it only ever travels by email.
+        return Response({'ok': True, 'cooldown': RESEND_COOLDOWN_SECONDS})
 
 
 class ConfirmEmailCodeView(APIView):
@@ -98,13 +92,11 @@ class SendPhoneCodeView(APIView):
             return Response({'error': 'Enter your phone number first.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            code = send_phone_code(user)
+            send_phone_code(user)
         except VerificationError as exc:
             return _error(exc)
-        body = {'ok': True, 'cooldown': RESEND_COOLDOWN_SECONDS, **_user_payload(user)}
-        if settings.DEBUG and sms_backend_name() == 'console':
-            body['debugCode'] = code
-        return Response(body)
+        # The code is NEVER returned to the browser - it only ever travels by SMS.
+        return Response({'ok': True, 'cooldown': RESEND_COOLDOWN_SECONDS, **_user_payload(user)})
 
 
 class ConfirmPhoneCodeView(APIView):

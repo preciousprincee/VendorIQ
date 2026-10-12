@@ -52,6 +52,20 @@ class ProductSerializer(serializers.ModelSerializer):
     # half of this - a negative sale QUANTITY - at the point of sale
     # itself). ExpenseSerializer already validates amount > 0 the same way;
     # this brings Product in line with that existing convention.
+    def validate_barcode(self, value):
+        # The till finds a product by its barcode. If two products in one store shared a barcode, a scan
+        # would silently ring up whichever the database returned first - the wrong item, wrong price.
+        value = (value or '').strip() or None          # '  ' means "no barcode"; stray spaces would never match a scan
+        store = self.context.get('store')
+        if not value or store is None:
+            return value
+        if self.instance is not None and (self.instance.barcode or '').strip() == value:
+            return value                               # unchanged: never block editing a product over an old duplicate
+        clash = Product.objects.filter(store=store, barcode=value).exclude(pk=getattr(self.instance, 'pk', None)).first()
+        if clash:
+            raise serializers.ValidationError(f'"{clash.name}" already uses this barcode.')
+        return value
+
     def validate_cost_price(self, value):
         if value < 0:
             raise serializers.ValidationError('Cost price cannot be negative.')

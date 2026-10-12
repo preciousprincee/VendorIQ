@@ -42,7 +42,19 @@ services:
       - key: ALLOWED_HOSTS
         value: vendoriq-api.onrender.com
       - key: DATABASE_URL
-        sync: false # paste in Supabase's pooler connection string (see README)
+        sync: false # Neon POOLED connection string (host contains "-pooler"), ending ?sslmode=require&channel_binding=require
+      - key: DATABASE_URL_DIRECT
+        sync: false # Neon DIRECT connection string (no "-pooler"). Used only by `manage.py migrate` in the build step
+      - key: R2_ACCOUNT_ID
+        sync: false # Cloudflare dashboard > R2 > overview: the 32-character Account ID
+      - key: R2_BUCKET
+        sync: false # the R2 bucket that holds product photos
+      - key: R2_ACCESS_KEY_ID
+        sync: false # R2 > Manage API tokens > create a token with Object Read & Write on THIS bucket
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false # public address of the bucket: a custom domain connected to it, e.g. photos.yourdomain.com
       - key: CORS_ALLOWED_ORIGINS
         value: https://your-app.vercel.app
       - key: AUTH_ALLOW_BODY_REFRESH
@@ -59,14 +71,14 @@ services:
         sync: false # SMS provider for phone verification codes - without it signup verification shows "temporarily unavailable"
       - key: TERMII_SENDER_ID
         value: N-Alert # must be an approved sender ID on your Termii account
+      - key: TERMII_BASE_URL
+        value: https://api.ng.termii.com # use the base URL shown on YOUR Termii dashboard if it differs
       - key: GROQ_API_KEY
         sync: false
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
+      - key: RESEND_API_KEY
+        sync: false # resend.com > API Keys (starts with re_). "Sending access" is enough; the app refuses to start without it
+      - key: DEFAULT_FROM_EMAIL
+        sync: false # a sender on a domain VERIFIED in Resend (resend.com/domains), e.g. VendorIQ <no-reply@yourdomain.com>
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false # optional - leave unset to just not offer Google sign-in
       - key: GOOGLE_OAUTH_CLIENT_SECRET
@@ -91,7 +103,7 @@ services:
           property: connectionString
 
   # Runs background jobs (currently: invoice emails) so a slow/unreachable
-  # SMTP provider costs worker time here, not a web request thread. Without
+  # email provider costs worker time here, not a web request thread. Without
   # REDIS_URL set, CELERY_TASK_ALWAYS_EAGER makes tasks run inline in the web
   # service instead (see settings.py) - so this service only matters once
   # REDIS_URL is actually wired up, which it is below.
@@ -119,19 +131,29 @@ services:
       - key: SECRET_KEY
         sync: false # paste the SAME long random value into vendoriq-api AND vendoriq-celery-worker (JWT/OTP signing must agree across both)
       - key: DATABASE_URL
-        sync: false # same Supabase pooler string as vendoriq-api
+        sync: false # same Neon POOLED string as vendoriq-api
+      - key: R2_ACCOUNT_ID
+        sync: false # same value as vendoriq-api (settings refuse to start in production without the R2 variables)
+      - key: R2_BUCKET
+        sync: false # the R2 bucket that holds product photos
+      - key: R2_ACCESS_KEY_ID
+        sync: false # R2 > Manage API tokens > create a token with Object Read & Write on THIS bucket
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false # public address of the bucket: a custom domain connected to it, e.g. photos.yourdomain.com
       - key: FRONTEND_URL
         value: https://your-app.vercel.app # the worker renders invoice emails - without this the logo URL was empty/localhost
       - key: PAYSTACK_SECRET_KEY
         sync: false # referral payouts run from tasks/sweeps that may execute on the worker
+      - key: TERMII_API_KEY
+        sync: false # same key as vendoriq-api: the app refuses to start in live mode without it
       - key: GROQ_API_KEY
         sync: false
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
+      - key: RESEND_API_KEY
+        sync: false # resend.com > API Keys (starts with re_). "Sending access" is enough; the app refuses to start without it
+      - key: DEFAULT_FROM_EMAIL
+        sync: false # same as vendoriq-api
       - key: SENTRY_DSN
         sync: false # same DSN as vendoriq-api - catches background task failures (e.g. invoice emails) too, not just web request errors
       - key: POSTHOG_API_KEY
