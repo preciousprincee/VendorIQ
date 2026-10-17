@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://vendoriq-api.onrender.com/api/:path*"
+      "destination": "https://vendoriq-backend-xzy0.onrender.com/api/:path*"
     },
     {
       "source": "/ingest/static/:path*",
